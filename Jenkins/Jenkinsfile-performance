@@ -1,0 +1,229 @@
+pipeline {
+    agent any
+
+    triggers {
+        GenericTrigger(
+            genericVariables: [
+                [key: 'ISSUE_KEY',    value: '$.issue.key'],
+                [key: 'SERVICE_URL',  value: '$.issue.fields.customfield_10039'],
+                [key: 'HTTP_METHOD',  value: '$.issue.fields.customfield_10072.value'],
+                [key: 'HEADERS',      value: '$.issue.fields.customfield_10073'],
+                [key: 'BODY',         value: '$.issue.fields.customfield_10074'],
+                [key: 'TEST_TYPE',    value: '$.issue.fields.customfield_10075.value'],
+                [key: 'VUS',          value: '$.issue.fields.customfield_10076'],
+                [key: 'DURATION',     value: '$.issue.fields.customfield_10077'],
+            ],
+            token: 'jira-performance',
+            printContributedVariables: true,
+            printPostContent: true
+        )
+    }
+
+    parameters {
+        string(name: 'SERVICE_URL', defaultValue: 'http://host.docker.internal:8000/health', description: 'URL del endpoint')
+        choice(name: 'METHOD',      choices: ['GET','POST','PUT','DELETE'], description: 'Método HTTP')
+        string(name: 'HEADERS',     defaultValue: '{"Content-Type": "application/json"}', description: 'Headers JSON')
+        string(name: 'BODY',        defaultValue: 'null', description: 'Body JSON')
+        choice(name: 'TEST_TYPE',   choices: ['smoke','load','stress'], description: 'Tipo de prueba')
+        string(name: 'VUS',         defaultValue: '5', description: 'Usuarios virtuales')
+        string(name: 'DURATION',    defaultValue: '30s', description: 'Duración')
+        string(name: 'EMAIL',       defaultValue: 'newprojectcv.1999@gmail.com', description: 'Correo')
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo '📥 Bajando código de GitHub...'
+                git branch: 'main', url: 'https://github.com/GhostNoc99/mi-ecosistema.git'
+            }
+        }
+
+        stage('Validar Parámetros') {
+            steps {
+                script {
+                    def url      = env.SERVICE_URL
+                    def method   = env.HTTP_METHOD_value  ?: env.HTTP_METHOD ?: params.METHOD
+                    def testType = env.TEST_TYPE_value    ?: env.TEST_TYPE ?: params.TEST_TYPE
+                    def vus      = env.VUS                ?: params.VUS
+                    def duration = env.DURATION           ?: params.DURATION
+                    def issueKey = env.ISSUE_KEY          ?: 'MANUAL'
+
+                    currentBuild.description = "🧪 ${testType.toUpperCase()} | ${method} | ${vus} VUs | ${duration} | ${issueKey}"
+
+                    echo "🔍 Origen: ${issueKey == 'MANUAL' ? 'Manual' : 'Jira ' + issueKey}"
+                    echo "URL:      ${url}"
+                    echo "Método:   ${method}"
+                    echo "Tipo:     ${testType}"
+                    echo "VUs:      ${vus}"
+                    echo "Duración: ${duration}"
+
+                    if (!url) error("❌ SERVICE_URL es requerido")
+
+                    // Transition ID 2 → Iniciar Prueba (OPEN → EN EJECUCIÓN)
+                    if (issueKey && issueKey != 'MANUAL') {
+                        withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
+                            sh """
+                                curl -s -X POST \\
+                                -H 'Content-Type: application/json' \\
+                                -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                                -d '{"transition": {"id": "2"}}' \\
+                                'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/transitions'
+                            """
+                            sh """
+                                curl -s -X POST \\
+                                -H 'Content-Type: application/json' \\
+                                -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                                -d '{"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "🚀 Jenkins ha iniciado la prueba de performance. Build #${env.BUILD_NUMBER} | Tipo: ${testType.toUpperCase()} | Método: ${method} | VUs: ${vus} | Duración: ${duration}"}]}]}}' \\
+                                'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/comment'
+                            """
+                        }
+                        echo "💬 Comentario de inicio agregado en ${issueKey}"
+                        echo "🔄 Tarea ${issueKey} movida a En Ejecución"
+                    }
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                script {
+                    def url = env.SERVICE_URL ?: params.SERVICE_URL
+                    echo "🧪 Verificando que el servicio responde..."
+                    def response = sh(
+                        script: "curl -s -o /dev/null -w '%{http_code}' ${url}",
+                        returnStdout: true
+                    ).trim()
+                    echo "Código de respuesta: ${response}"
+                    if (response == "000") {
+                        error("❌ El servicio no responde en ${url}")
+                    }
+                }
+            }
+        }
+
+        stage('Ejecutar Prueba') {
+            steps {
+                script {
+                    def url      = env.SERVICE_URL
+                    def method   = env.HTTP_METHOD_value  ?: env.HTTP_METHOD ?: params.METHOD
+                    def headers  = env.HEADERS            ?: params.HEADERS
+                    def body     = env.BODY               ?: params.BODY
+                    def testType = env.TEST_TYPE_value    ?: env.TEST_TYPE ?: params.TEST_TYPE
+                    def vus      = env.VUS                ?: params.VUS
+                    def duration = env.DURATION           ?: params.DURATION
+
+                    echo "🚀 Corriendo ${testType.toUpperCase()} | ${method} | ${vus} VUs"
+
+                    sh """
+                        mkdir -p k6/reports
+                        k6 run k6/dynamic-test.js \\
+                        --env URL=${url} \\
+                        --env METHOD=${method} \\
+                        --env HEADERS='${headers}' \\
+                        --env BODY='${body}' \\
+                        --env VUS=${vus} \\
+                        --env DURATION=${duration} \\
+                        --env TEST_TYPE=${testType} \\
+                        --out influxdb=http://host.docker.internal:8086/k6
+                    """
+                }
+            }
+        }
+
+        stage('Actualizar Jira') {
+            when {
+                expression { env.ISSUE_KEY != null && env.ISSUE_KEY != 'MANUAL' }
+            }
+            steps {
+                script {
+                    def issueKey = env.ISSUE_KEY
+                    def status   = currentBuild.result ?: 'SUCCESS'
+                    def emoji    = status == 'SUCCESS' ? '✅' : '❌'
+                    def mensaje  = "${emoji} Performance Test completado. Build #${env.BUILD_NUMBER} - Estado: ${status}"
+
+                    // Transition ID 3 → Prueba Exitosa (EN EJECUCIÓN → FINALIZADO)
+                    // Transition ID 4 → Prueba Fallida (EN EJECUCIÓN → FALLIDO)
+                    def transitionId   = status == 'SUCCESS' ? '3' : '4'
+                    def transitionName = status == 'SUCCESS' ? 'Finalizado' : 'Fallido'
+
+                    withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
+
+                        // 1. Cambiar estado
+                        echo "🔄 Cambiando estado a ${transitionName}..."
+                        sh """
+                            curl -s -X POST \\
+                            -H 'Content-Type: application/json' \\
+                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                            -d '{"transition": {"id": "${transitionId}"}}' \\
+                            'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/transitions'
+                        """
+
+                        // 2. Agregar comentario
+                        echo "📝 Agregando comentario en ${issueKey}..."
+                        sh """
+                            curl -s -X POST \\
+                            -H 'Content-Type: application/json' \\
+                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                            -d '{"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "${mensaje}"}]}]}}' \\
+                            'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/comment'
+                        """
+
+                        // 3. Adjuntar reporte HTML
+                        echo "📎 Adjuntando reporte en ${issueKey}..."
+                        sh """
+                            curl -s -X POST \\
+                            -H 'X-Atlassian-Token: no-check' \\
+                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                            -F 'file=@k6/reports/dynamic-report.html' \\
+                            'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/attachments'
+                        """
+
+                        echo "✅ Jira actualizado correctamente!"
+                    }
+                }
+            }
+        }
+
+        stage('Publicar Reporte') {
+            steps {
+                echo "📊 Reporte generado en k6/reports/dynamic-report.html"
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                def status   = currentBuild.result ?: 'SUCCESS'
+                def emoji    = status == 'SUCCESS' ? '✅' : '❌'
+                def testType = (env.TEST_TYPE ?: params.TEST_TYPE)?.toUpperCase() ?: 'N/A'
+                def url      = env.SERVICE_URL ?: params.SERVICE_URL
+                def method   = env.HTTP_METHOD ?: params.METHOD
+                def issueKey = env.ISSUE_KEY   ?: 'MANUAL'
+
+                if (fileExists('k6/reports/dynamic-report.html')) {
+                    emailext(
+                        to: params.EMAIL ?: 'newprojectcv.1999@gmail.com',
+                        subject: "${emoji} Performance Report — ${testType} | ${method} ${url} | ${issueKey}",
+                        body: """
+                            <h2>${emoji} Reporte de Performance</h2>
+                            <table border='1' cellpadding='5'>
+                                <tr><td><b>Jira Issue</b></td><td>${issueKey}</td></tr>
+                                <tr><td><b>URL</b></td><td>${url}</td></tr>
+                                <tr><td><b>Método</b></td><td>${method}</td></tr>
+                                <tr><td><b>Tipo</b></td><td>${testType}</td></tr>
+                                <tr><td><b>Estado</b></td><td>${status}</td></tr>
+                            </table>
+                            <p>Ver reporte detallado en el archivo adjunto.</p>
+                        """,
+                        attachmentsPattern: 'k6/reports/dynamic-report.html',
+                        mimeType: 'text/html'
+                    )
+                }
+            }
+        }
+        success { echo '🚀 Prueba completada exitosamente!' }
+        failure { echo '❌ La prueba falló!' }
+    }
+}
