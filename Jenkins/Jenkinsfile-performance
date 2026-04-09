@@ -198,26 +198,46 @@ pipeline {
                               -F 'file=@${reportPath}' \\
                               'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/attachments'
                         """
+                        // Leer métricas del JSON generado por k6
+                        def jsonName   = reportName.replace('.html', '.json')
+                        def jsonPath   = reportPath.replace('.html', '.json')
+                        def metricas   = [:]
+
+                        if (fileExists(jsonPath)) {
+                            def jsonText = readFile(jsonPath)
+                            metricas = readJSON text: jsonText
+                        }
+
+                        def iterations = metricas.iterations ?: 0
+                        def errorRate  = metricas.errorRate  ? String.format("%.2f", metricas.errorRate * 100) + '%' : '0.00%'
+                        def p50        = metricas.p50  ? String.format("%.2f", metricas.p50)  + 'ms' : '0ms'
+                        def p90        = metricas.p90  ? String.format("%.2f", metricas.p90)  + 'ms' : '0ms'
+                        def p95        = metricas.p95  ? String.format("%.2f", metricas.p95)  + 'ms' : '0ms'
+                        def p99        = metricas.p99  ? String.format("%.2f", metricas.p99)  + 'ms' : '0ms'
+                        def avg        = metricas.avg  ? String.format("%.2f", metricas.avg)  + 'ms' : '0ms'
+                        def minD       = metricas.min  ? String.format("%.2f", metricas.min)  + 'ms' : '0ms'
+                        def maxD       = metricas.max  ? String.format("%.2f", metricas.max)  + 'ms' : '0ms'
+                        def reqRate    = metricas.reqRate ? String.format("%.2f", metricas.reqRate) + '/s' : '0/s'
 
                         // 4. Crear página en Confluence
                         echo "📚 Publicando en Confluence..."
                         sh """
                             curl -s -X POST \\
-                              -H 'Content-Type: application/json' \\
-                              -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                              -d '{
+                            -H 'Content-Type: application/json' \\
+                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                            -d '{
                                 "type": "page",
                                 "title": "${pageTitle}",
                                 "space": {"key": "PERF"},
                                 "ancestors": [{"id": "${confluencePageId}"}],
                                 "body": {
-                                  "storage": {
-                                    "value": "<h2>${emoji} ${transitionName}</h2><p><strong>Issue:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${issueKey}</a></p><p><strong>Tipo:</strong> ${testType?.toUpperCase()}</p><p><strong>Build:</strong> #${env.BUILD_NUMBER}</p><p><strong>Estado:</strong> ${status}</p><p><strong>Reporte:</strong> ${reportName}</p><p>El reporte HTML completo esta adjunto en la tarea de Jira.</p>",
+                                "storage": {
+                                    "value": "<h2>${emoji} ${transitionName}</h2><p><strong>Issue:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${issueKey}</a> | <strong>Tipo:</strong> ${testType?.toUpperCase()} | <strong>Build:</strong> #${env.BUILD_NUMBER} | <strong>Estado:</strong> ${status}</p><h3>Summary</h3><table><tbody><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Iteraciones</td><td>${iterations}</td></tr><tr><td>Requests/seg</td><td>${reqRate}</td></tr><tr><td>Error Rate</td><td>${errorRate}</td></tr><tr><td>Avg</td><td>${avg}</td></tr><tr><td>Min</td><td>${minD}</td></tr><tr><td>Max</td><td>${maxD}</td></tr><tr><td>P50</td><td>${p50}</td></tr><tr><td>P90</td><td>${p90}</td></tr><tr><td>P95</td><td>${p95}</td></tr><tr><td>P99</td><td>${p99}</td></tr></tbody></table><p><strong>Reporte completo adjunto en Jira:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${reportName}</a></p>",
                                     "representation": "storage"
-                                  }
                                 }
-                              }' \\
-                              'https://mi-ecosistema.atlassian.net/wiki/rest/api/content'
+                                }
+                            }' \\
+                            'https://mi-ecosistema.atlassian.net/wiki/rest/api/content'
                         """
 
                         echo "✅ Jira y Confluence actualizados!"
