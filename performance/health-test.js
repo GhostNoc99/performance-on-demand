@@ -20,7 +20,10 @@ export default function () {
 
 // 🚨 versión SEGURA (sin htmlReport)
 export function handleSummary(data) {
+  const now = new Date();
+  const timestamp = now.toISOString().replace(/[:.]/g, '-');
+
   return {
-    'report_gitactions/summary.json': JSON.stringify(data, null, 2),
+    [`report_gitactions/summary-${timestamp}.json`]: JSON.stringify(data, null, 2),
   };
 }
