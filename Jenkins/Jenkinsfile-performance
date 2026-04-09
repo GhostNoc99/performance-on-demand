@@ -35,7 +35,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo '📥 Bajando código de GitHub...'
-                git branch: 'main', url: 'https://github.com/GhostNoc99/mi-ecosistema.git'
+                git branch: 'main', url: 'https://github.com/GhostNoc99/performance-on-demand.git'
             }
         }
 
