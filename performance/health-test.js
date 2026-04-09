@@ -2,7 +2,7 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { htmlReport } from 'https://jslib.k6.io/k6-summary/0.1.0/index.js';
 
-const BASE_URL = __ENV.BASE_URL || 'http://host.docker.internal:8000/health';
+const BASE_URL = __ENV.BASE_URL || 'http://host.docker.internal:8000';
 
 export const options = {
   vus: 1,
