@@ -1,11 +1,11 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-const BASE_URL = __ENV.BASE_URL || 'https://ungovernably-poachier-rochell.ngrok-free.dev/health';
+const BASE_URL = __ENV.BASE_URL || 'https://test.k6.io';
 
 export const options = {
-  vus: 10,
-  duration: '30s',
+  vus: 1,
+  duration: '10s',
 };
 
 export default function () {
