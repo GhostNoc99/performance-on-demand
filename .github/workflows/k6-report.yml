@@ -37,6 +37,12 @@ jobs:
       - name: Ejecutar prueba k6
         run: k6 run performance/health-test.js
 
+      - name: Convertir JSON a HTML
+        run: python3 scripts/json_to_html.py
+
+      - name: Ver archivos generados
+        run: ls -R report_gitactions
+
       - name: Subir reporte como artifact
         uses: actions/upload-artifact@v4
         with:
