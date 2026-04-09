@@ -199,26 +199,34 @@ pipeline {
                               'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/attachments'
                         """
                         // Leer métricas del JSON generado por k6
-                        def jsonName   = reportName.replace('.html', '.json')
-                        def jsonPath   = reportPath.replace('.html', '.json')
-                        def metricas   = [:]
+                        // Leer métricas del JSON
+                        def jsonName = reportName.replace('.html', '.json')
+                        def jsonPath = reportPath.replace('.html', '.json')
+
+                        def iterations = '0'
+                        def errorRate  = '0.00%'
+                        def p50 = '0ms'; def p90 = '0ms'; def p95 = '0ms'; def p99 = '0ms'
+                        def avg = '0ms'; def minD = '0ms'; def maxD = '0ms'
+                        def reqRate = '0/s'
 
                         if (fileExists(jsonPath)) {
                             def jsonText = readFile(jsonPath)
-                            def jsonSlurper = new groovy.json.JsonSlurper()
-                            metricas = jsonSlurper.parseText(jsonText)
+                            // Extraer valores con regex para evitar LazyMap
+                            def getVal = { key ->
+                                def m = jsonText =~ /"${key}"\s*:\s*([\d.]+)/
+                                m ? m[0][1] : '0'
+                            }
+                            iterations = getVal('iterations')
+                            reqRate    = String.format("%.2f", getVal('reqRate').toDouble()) + '/s'
+                            errorRate  = String.format("%.2f", getVal('errorRate').toDouble() * 100) + '%'
+                            avg  = String.format("%.2f", getVal('avg').toDouble())  + 'ms'
+                            minD = String.format("%.2f", getVal('min').toDouble())  + 'ms'
+                            maxD = String.format("%.2f", getVal('max').toDouble())  + 'ms'
+                            p50  = String.format("%.2f", getVal('p50').toDouble())  + 'ms'
+                            p90  = String.format("%.2f", getVal('p90').toDouble())  + 'ms'
+                            p95  = String.format("%.2f", getVal('p95').toDouble())  + 'ms'
+                            p99  = String.format("%.2f", getVal('p99').toDouble())  + 'ms'
                         }
-
-                        def iterations = metricas?.iterations ?: 0
-                        def errorRate  = metricas?.errorRate  ? String.format("%.2f", metricas.errorRate * 100) + '%' : '0.00%'
-                        def p50        = metricas?.p50  ? String.format("%.2f", metricas.p50)  + 'ms' : '0ms'
-                        def p90        = metricas?.p90  ? String.format("%.2f", metricas.p90)  + 'ms' : '0ms'
-                        def p95        = metricas?.p95  ? String.format("%.2f", metricas.p95)  + 'ms' : '0ms'
-                        def p99        = metricas?.p99  ? String.format("%.2f", metricas.p99)  + 'ms' : '0ms'
-                        def avg        = metricas?.avg  ? String.format("%.2f", metricas.avg)  + 'ms' : '0ms'
-                        def minD       = metricas?.min  ? String.format("%.2f", metricas.min)  + 'ms' : '0ms'
-                        def maxD       = metricas?.max  ? String.format("%.2f", metricas.max)  + 'ms' : '0ms'
-                        def reqRate    = metricas?.reqRate ? String.format("%.2f", metricas.reqRate) + '/s' : '0/s'
 
                         // 4. Crear página en Confluence
                         echo "📚 Publicando en Confluence..."
