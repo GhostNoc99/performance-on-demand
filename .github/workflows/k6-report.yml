@@ -1,0 +1,52 @@
+name: k6 Performance Report
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  k6-test:
+    runs-on: ubuntu-latest
+
+    env:
+      BASE_URL: ${{ vars.BASE_URL }}
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Instalar k6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnupg ca-certificates
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Crear carpeta de reportes
+        run: mkdir -p report_gitactions
+
+      - name: Ejecutar prueba k6
+        run: k6 run performance/health-test.js
+
+      - name: Subir reporte como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-report
+          path: report_gitactions/
+
+      - name: Commit y push de reportes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add report_gitactions/
+          git diff --cached --quiet || git commit -m "chore: actualizar reportes k6"
+          git push
