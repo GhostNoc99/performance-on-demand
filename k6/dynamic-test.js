@@ -144,18 +144,24 @@ function getEscenario() {
 }
 
 export default function () {
+  // Extrae el path limpio de la URL
+  const urlPath = URL.replace(/\/$/, '')  // quita barra final
+                     .split('/')
+                     .filter(s => s && !s.includes(':') && !s.includes('docker'))
+                     .pop() || 'root';
+
   const res = http.request(METHOD, URL, BODY, {
     headers: HEADERS,
     tags: {
-      service:   URL.split('/').pop() || 'root',
+      service:   urlPath,
       method:    METHOD,
       test_type: TEST_TYPE,
-      issue:     __ENV.ISSUE_KEY || 'MANUAL',
+      issue:     ISSUE_KEY,
     },
   });
 
   check(res, {
-    'status 2xx':           (r) => r.status >= 200 && r.status < 300,
+    'status 2xx':              (r) => r.status >= 200 && r.status < 300,
     'responde en menos de 2s': (r) => r.timings.duration < 2000,
   });
 
