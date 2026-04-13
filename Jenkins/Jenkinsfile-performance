@@ -123,6 +123,7 @@ pipeline {
                     def vus      = env.VUS        ?: params.VUS
                     def duration = env.DURATION   ?: params.DURATION
                     def reportName = env.REPORT_NAME
+                    def issueKey = env.ISSUE_KEY  ?: 'MANUAL'
 
                     echo "🚀 Corriendo ${testType.toUpperCase()} | ${method} | ${vus} VUs"
                     echo "📄 Reporte: ${reportName}"
@@ -130,15 +131,16 @@ pipeline {
                     sh """
                         mkdir -p k6/reports
                         k6 run k6/dynamic-test.js \\
-                          --env URL=${url} \\
-                          --env METHOD=${method} \\
-                          --env HEADERS='${headers}' \\
-                          --env BODY='${body}' \\
-                          --env VUS=${vus} \\
-                          --env DURATION=${duration} \\
-                          --env TEST_TYPE=${testType} \\
-                          --env REPORT_NAME=${reportName} \\
-                          --out influxdb=http://host.docker.internal:8086/k6
+                        --env URL=${url} \\
+                        --env METHOD=${method} \\
+                        --env HEADERS='${headers}' \\
+                        --env BODY='${body}' \\
+                        --env VUS=${vus} \\
+                        --env DURATION=${duration} \\
+                        --env TEST_TYPE=${testType} \\
+                        --env REPORT_NAME=${reportName} \\
+                        --env ISSUE_KEY=${issueKey} \\
+                        --out influxdb=http://host.docker.internal:8086/k6
                     """
                 }
             }

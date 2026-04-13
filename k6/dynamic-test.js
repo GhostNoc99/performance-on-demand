@@ -9,6 +9,7 @@ const BODY      = __ENV.BODY !== 'null' ? __ENV.BODY : null;
 const VUS       = parseInt(__ENV.VUS || '5');
 const DURATION  = __ENV.DURATION || '30s';
 const TEST_TYPE = __ENV.TEST_TYPE || 'smoke';
+const ISSUE_KEY = __ENV.ISSUE_KEY || 'MANUAL';
 
 function getOptions() {
   if (TEST_TYPE === 'smoke') {
@@ -143,11 +144,21 @@ function getEscenario() {
 }
 
 export default function () {
-  const res = http.request(METHOD, URL, BODY, { headers: HEADERS });
+  const res = http.request(METHOD, URL, BODY, {
+    headers: HEADERS,
+    tags: {
+      service:   URL.split('/').pop() || 'root',
+      method:    METHOD,
+      test_type: TEST_TYPE,
+      issue:     __ENV.ISSUE_KEY || 'MANUAL',
+    },
+  });
+
   check(res, {
-    'status 2xx': (r) => r.status >= 200 && r.status < 300,
+    'status 2xx':           (r) => r.status >= 200 && r.status < 300,
     'responde en menos de 2s': (r) => r.timings.duration < 2000,
   });
+
   sleep(1);
 }
 
