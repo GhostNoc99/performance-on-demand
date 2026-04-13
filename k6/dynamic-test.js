@@ -152,6 +152,15 @@ export default function () {
 }
 
 function generarReporte(data) {
+  // Helper para formatear valores muy pequeños
+  const fmt = (v, decimals = 2) => {
+    if (v === null || v === undefined) return 'N/A';
+    const n = parseFloat(v);
+    if (isNaN(n)) return 'N/A';
+    if (n === 0) return '0ms';
+    if (n < 0.01) return '< 0.01ms';
+    return n.toFixed(decimals) + 'ms';
+  }
   // ── Métricas base ──
   const dur       = data.metrics.http_req_duration?.values || {};
   const p50       = dur['p(50)']  || 0;
@@ -444,16 +453,20 @@ function generarReporte(data) {
   <!-- CONNECT TIME DETAIL -->
   <div class="section">
     <h2>🔌 5. Connect Time — Detalle</h2>
+    ${connAvg < 0.1 ? `
+    <div style="background:#eaf4fb;border-left:4px solid #3498db;padding:10px 15px;border-radius:6px;margin-bottom:12px;font-size:13px;color:#2980b9;">
+      ℹ️ Connect time cercano a 0ms es normal — indica que las conexiones TCP se están reutilizando (keep-alive). Esto es un comportamiento óptimo.
+    </div>` : ''}
     <table>
       <tr><th>Métrica</th><th>Valor</th><th>Estado</th></tr>
-      <tr><td>Connect Time Mínimo</td><td>${connMin.toFixed(2)}ms</td><td><span class="badge ok">✅ Mejor caso</span></td></tr>
-      <tr><td>Connect Time Promedio</td><td>${connAvg.toFixed(2)}ms</td><td><span class="badge ${connAvg < 100 ? 'ok' : connAvg < 500 ? 'warn' : 'error'}">${connAvg < 100 ? '✅ Óptimo' : connAvg < 500 ? '⚠️ Revisar' : '❌ Lento'}</span></td></tr>
-      <tr><td>Connect Time P95</td><td>${connP95.toFixed(2)}ms</td><td><span class="badge ${connP95 < 200 ? 'ok' : connP95 < 1000 ? 'warn' : 'error'}">${connP95 < 200 ? '✅ Ok' : connP95 < 1000 ? '⚠️ Revisar' : '❌ Crítico'}</span></td></tr>
-      <tr><td>Connect Time Máximo</td><td>${connMax.toFixed(2)}ms</td><td><span class="badge ${connMax < 500 ? 'ok' : connMax < 2000 ? 'warn' : 'error'}">${connMax < 500 ? '✅ Ok' : connMax < 2000 ? '⚠️ Pico alto' : '❌ Crítico'}</span></td></tr>
-      <tr><td>Tiempo Bloqueado (avg)</td><td>${blockedAvg.toFixed(2)}ms</td><td><span class="badge info">📊 Overhead red</span></td></tr>
-      <tr><td>Tiempo Enviando (avg)</td><td>${sending.avg?.toFixed(2) || 0}ms</td><td><span class="badge info">📤 Upload</span></td></tr>
-      <tr><td>Tiempo Recibiendo (avg)</td><td>${receiving.avg?.toFixed(2) || 0}ms</td><td><span class="badge info">📥 Download</span></td></tr>
-      <tr><td>Tiempo Esperando (avg)</td><td>${waiting.avg?.toFixed(2) || 0}ms</td><td><span class="badge info">⏳ TTFB</span></td></tr>
+      <tr><td>Connect Time Mínimo</td><td>${fmt(connMin)}</td><td><span class="badge ok">✅ Mejor caso</span></td></tr>
+      <tr><td>Connect Time Promedio</td><td>${fmt(connAvg)}</td><td><span class="badge ${connAvg < 100 ? 'ok' : connAvg < 500 ? 'warn' : 'error'}">${connAvg < 100 ? '✅ Óptimo' : connAvg < 500 ? '⚠️ Revisar' : '❌ Lento'}</span></td></tr>
+      <tr><td>Connect Time P95</td><td>${fmt(connP95)}</td><td><span class="badge ${connP95 < 200 ? 'ok' : connP95 < 1000 ? 'warn' : 'error'}">${connP95 < 200 ? '✅ Ok' : connP95 < 1000 ? '⚠️ Revisar' : '❌ Crítico'}</span></td></tr>
+      <tr><td>Connect Time Máximo</td><td>${fmt(connMax)}</td><td><span class="badge ${connMax < 500 ? 'ok' : connMax < 2000 ? 'warn' : 'error'}">${connMax < 500 ? '✅ Ok' : connMax < 2000 ? '⚠️ Pico alto' : '❌ Crítico'}</span></td></tr>
+      <tr><td>Tiempo Bloqueado (avg)</td><td>${fmt(blockedAvg)}</td><td><span class="badge info">📊 Overhead red</span></td></tr>
+      <tr><td>Tiempo Enviando (avg)</td><td>${fmt(sending.avg)}</td><td><span class="badge info">📤 Upload</span></td></tr>
+      <tr><td>Tiempo Recibiendo (avg)</td><td>${fmt(receiving.avg)}</td><td><span class="badge info">📥 Download</span></td></tr>
+      <tr><td>Tiempo Esperando TTFB (avg)</td><td>${fmt(waiting.avg)}</td><td><span class="badge info">⏳ TTFB</span></td></tr>
     </table>
   </div>
 
@@ -526,23 +539,40 @@ function generarReporte(data) {
   new Chart(document.getElementById('connectChart'), {
     type: 'bar',
     data: {
-      labels: ['Min', 'Avg', 'P95', 'Max'],
+      labels: ['Min', 'Avg', 'P95', 'Max', 'Bloqueado', 'TTFB'],
       datasets: [{
-        label: 'Connect Time (ms)',
+        label: 'Tiempo (ms)',
         data: [
-          ${connMin.toFixed(2)},
-          ${connAvg.toFixed(2)},
-          ${connP95.toFixed(2)},
-          ${connMax.toFixed(2)}
+          ${connMin.toFixed(3)},
+          ${connAvg.toFixed(3)},
+          ${connP95.toFixed(3)},
+          ${connMax.toFixed(3)},
+          ${blockedAvg.toFixed(3)},
+          ${(waiting.avg || 0).toFixed(3)}
         ],
-        backgroundColor: ['#3498db','#f39c12','#e67e22','#e74c3c'],
+        backgroundColor: ['#3498db','#f39c12','#e67e22','#e74c3c','#9b59b6','#1abc9c'],
         borderRadius: 6,
       }]
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, title: { display: true, text: 'ms' } } }
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.raw < 0.01 ? '< 0.01ms (keep-alive)' : ctx.raw.toFixed(3) + 'ms'
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'ms' },
+          ticks: {
+            callback: (v) => v < 0.01 ? '~0' : v.toFixed(2) + 'ms'
+          }
+        }
+      }
     }
   });
 
@@ -571,14 +601,6 @@ function generarReporte(data) {
 </body>
 </html>`;
 }
-
-/*export function handleSummary(data) {
-  const reportName = __ENV.REPORT_NAME || 'dynamic-report.html';
-  return {
-    [`k6/reports/${reportName}`]: generarReporte(data),
-    stdout: textSummary(data, { indent: " ", enableColors: true }),
-  };
-}*/
 
 export function handleSummary(data) {
   const reportName = __ENV.REPORT_NAME || 'dynamic-report.html';
