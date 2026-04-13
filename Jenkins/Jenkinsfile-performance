@@ -198,34 +198,33 @@ pipeline {
                               -F 'file=@${reportPath}' \\
                               'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/attachments'
                         """
-                        // Leer métricas del JSON generado por k6
-                        // Leer métricas del JSON
+                        // Leer métricas del JSON con regex (evita LazyMap)
                         def jsonName = reportName.replace('.html', '.json')
                         def jsonPath = reportPath.replace('.html', '.json')
 
                         def iterations = '0'
                         def errorRate  = '0.00%'
-                        def p50 = '0ms'; def p90 = '0ms'; def p95 = '0ms'; def p99 = '0ms'
+                        def p50 = '0ms'; def p90 = '0ms'
+                        def p95 = '0ms'; def p99 = '0ms'
                         def avg = '0ms'; def minD = '0ms'; def maxD = '0ms'
                         def reqRate = '0/s'
 
                         if (fileExists(jsonPath)) {
                             def jsonText = readFile(jsonPath)
-                            // Extraer valores con regex para evitar LazyMap
-                            def getVal = { key ->
-                                def m = jsonText =~ /"${key}"\s*:\s*([\d.]+)/
-                                m ? m[0][1] : '0'
+                            def getVal = { String key ->
+                                def m = (jsonText =~ /"${key}"\s*:\s*([\d.]+)/)
+                                return m ? m[0][1] : '0'
                             }
                             iterations = getVal('iterations')
                             reqRate    = String.format("%.2f", getVal('reqRate').toDouble()) + '/s'
-                            errorRate  = String.format("%.2f", getVal('errorRate').toDouble() * 100) + '%'
-                            avg  = String.format("%.2f", getVal('avg').toDouble())  + 'ms'
-                            minD = String.format("%.2f", getVal('min').toDouble())  + 'ms'
-                            maxD = String.format("%.2f", getVal('max').toDouble())  + 'ms'
-                            p50  = String.format("%.2f", getVal('p50').toDouble())  + 'ms'
-                            p90  = String.format("%.2f", getVal('p90').toDouble())  + 'ms'
-                            p95  = String.format("%.2f", getVal('p95').toDouble())  + 'ms'
-                            p99  = String.format("%.2f", getVal('p99').toDouble())  + 'ms'
+                            errorRate  = String.format("%.4f", getVal('errorRate').toDouble() * 100) + '%'
+                            avg        = String.format("%.2f", getVal('avg').toDouble())  + 'ms'
+                            minD       = String.format("%.2f", getVal('min').toDouble())  + 'ms'
+                            maxD       = String.format("%.2f", getVal('max').toDouble())  + 'ms'
+                            p50        = String.format("%.2f", getVal('p50').toDouble())  + 'ms'
+                            p90        = String.format("%.2f", getVal('p90').toDouble())  + 'ms'
+                            p95        = String.format("%.2f", getVal('p95').toDouble())  + 'ms'
+                            p99        = String.format("%.2f", getVal('p99').toDouble())  + 'ms'
                         }
 
                         // 4. Crear página en Confluence
