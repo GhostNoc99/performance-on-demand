@@ -146,6 +146,55 @@ pipeline {
             }
         }
 
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def testType  = env.TESTTYPE_RESOLVED
+                    def reportPath = env.REPORT_PATH
+                    def jsonPath   = reportPath.replace('.html', '.json')
+
+                    // Umbrales por tipo de prueba
+                    def p95Threshold    = testType == 'stress' ? 2000 : 500
+                    def errorThreshold  = testType == 'stress' ? 5.0  : 1.0
+
+                    echo "🔍 Evaluando Quality Gate..."
+                    echo "Tipo: ${testType.toUpperCase()}"
+                    echo "Umbral p95:   < ${p95Threshold}ms"
+                    echo "Umbral error: < ${errorThreshold}%"
+
+                    if (fileExists(jsonPath)) {
+                        def jsonText = readFile(jsonPath)
+                        def getVal = { String key ->
+                            def m = (jsonText =~ /"${key}"\s*:\s*([\d.]+)/)
+                            return m ? m[0][1].toDouble() : 0.0
+                        }
+
+                        def p95       = getVal('p95')
+                        def errorRate = getVal('errorRate') * 100
+
+                        echo "📊 P95 medido:        ${String.format('%.2f', p95)}ms"
+                        echo "📊 Error rate medido: ${String.format('%.2f', errorRate)}%"
+
+                        def p95Pass   = p95 < p95Threshold
+                        def errorPass = errorRate < errorThreshold
+
+                        if (p95Pass && errorPass) {
+                            echo "✅ QUALITY GATE PASSED"
+                            echo "   P95: ${String.format('%.2f', p95)}ms < ${p95Threshold}ms ✅"
+                            echo "   Error: ${String.format('%.2f', errorRate)}% < ${errorThreshold}% ✅"
+                        } else {
+                            def msg = "❌ QUALITY GATE FAILED\n"
+                            if (!p95Pass)   msg += "   P95: ${String.format('%.2f', p95)}ms >= ${p95Threshold}ms ❌\n"
+                            if (!errorPass) msg += "   Error: ${String.format('%.2f', errorRate)}% >= ${errorThreshold}% ❌\n"
+                            error(msg)
+                        }
+                    } else {
+                        echo "⚠️ JSON de métricas no encontrado — omitiendo Quality Gate"
+                    }
+                }
+            }
+        }
+
         stage('Actualizar Jira y Confluence') {
             when {
                 expression { env.ISSUE_KEY != null && env.ISSUE_KEY != 'MANUAL' }
