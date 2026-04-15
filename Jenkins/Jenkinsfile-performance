@@ -1,3 +1,5 @@
+@Library('performance-lib') _
+
 pipeline {
     agent any
 
@@ -27,7 +29,7 @@ pipeline {
         choice(name: 'TEST_TYPE',   choices: ['smoke','load','stress'], description: 'Tipo de prueba')
         string(name: 'VUS',         defaultValue: '5', description: 'Usuarios virtuales')
         string(name: 'DURATION',    defaultValue: '30s', description: 'Duración')
-        string(name: 'EMAIL',       defaultValue: 'newprojectcv.1999@gmail.com', description: 'Correo para recibir el reporte')
+        string(name: 'EMAIL',       defaultValue: 'newprojectcv.1999@gmail.com', description: 'Correo')
     }
 
     stages {
@@ -45,10 +47,9 @@ pipeline {
                     def url      = env.SERVICE_URL
                     def method   = env.HTTP_METHOD_value ?: env.HTTP_METHOD ?: params.METHOD
                     def testType = env.TEST_TYPE_value   ?: env.TEST_TYPE   ?: params.TEST_TYPE
-                    def vus      = env.VUS               ?: params.VUS
-                    def duration = env.DURATION          ?: params.DURATION
-                    def issueKey = env.ISSUE_KEY         ?: 'MANUAL'
-
+                    def vus      = env.VUS      ?: params.VUS
+                    def duration = env.DURATION ?: params.DURATION
+                    def issueKey = env.ISSUE_KEY ?: 'MANUAL'
                     def fecha      = new Date().format('yyyy-MM-dd_HH-mm')
                     def reportName = "${issueKey}_${testType}_${fecha}.html"
                     def reportPath = "k6/reports/${reportName}"
@@ -61,31 +62,19 @@ pipeline {
                     currentBuild.description = "🧪 ${testType.toUpperCase()} | ${method} | ${vus} VUs | ${duration} | ${issueKey}"
 
                     echo "🔍 Origen: ${issueKey == 'MANUAL' ? 'Manual' : 'Jira ' + issueKey}"
-                    echo "URL:       ${url}"
-                    echo "Método:    ${method}"
-                    echo "Tipo:      ${testType}"
-                    echo "VUs:       ${vus}"
-                    echo "Duración:  ${duration}"
-                    echo "Reporte:   ${reportName}"
+                    echo "URL:      ${url}"
+                    echo "Método:   ${method}"
+                    echo "Tipo:     ${testType}"
+                    echo "VUs:      ${vus}"
+                    echo "Duración: ${duration}"
+                    echo "Reporte:  ${reportName}"
 
                     if (!url) error("❌ SERVICE_URL es requerido")
 
                     if (issueKey && issueKey != 'MANUAL') {
                         withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
-                            sh """
-                                curl -s -X POST \\
-                                  -H 'Content-Type: application/json' \\
-                                  -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                                  -d '{"transition": {"id": "2"}}' \\
-                                  'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/transitions'
-                            """
-                            sh """
-                                curl -s -X POST \\
-                                  -H 'Content-Type: application/json' \\
-                                  -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                                  -d '{"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "🚀 Jenkins ha iniciado la prueba. Build #${env.BUILD_NUMBER} | Tipo: ${testType.toUpperCase()} | Método: ${method} | VUs: ${vus} | Duración: ${duration}"}]}]}}' \\
-                                  'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/comment'
-                            """
+                            jiraUtils.transition(issueKey, '2', JIRA_TOKEN)
+                            jiraUtils.comment(issueKey, "🚀 Jenkins ha iniciado la prueba. Build #${env.BUILD_NUMBER} | Tipo: ${testType.toUpperCase()} | Método: ${method} | VUs: ${vus} | Duración: ${duration}", JIRA_TOKEN)
                         }
                         echo "🔄 Tarea ${issueKey} movida a En Ejecución"
                     }
@@ -103,9 +92,7 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     echo "Código de respuesta: ${response}"
-                    if (response == "000") {
-                        error("❌ El servicio no responde en ${url}")
-                    }
+                    if (response == "000") error("❌ El servicio no responde en ${url}")
                 }
             }
         }
@@ -113,34 +100,18 @@ pipeline {
         stage('Ejecutar Prueba') {
             steps {
                 script {
-                    def url        = env.SERVICE_URL
-                    def method     = env.METHOD_RESOLVED
-                    def headers    = env.HEADERS   ?: params.HEADERS
-                    def body       = env.BODY       ?: params.BODY
-                    def testType   = env.TESTTYPE_RESOLVED
-                    def vus        = env.VUS        ?: params.VUS
-                    def duration   = env.DURATION   ?: params.DURATION
-                    def reportName = env.REPORT_NAME
-                    def issueKey   = env.ISSUE_KEY  ?: 'MANUAL'
-
-                    echo "🚀 Corriendo ${testType.toUpperCase()} | ${method} | ${vus} VUs"
-                    echo "📄 Reporte: ${reportName}"
-
                     catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                        sh """
-                            mkdir -p k6/reports
-                            k6 run k6/dynamic-test.js \\
-                            --env URL=${url} \\
-                            --env METHOD=${method} \\
-                            --env HEADERS='${headers}' \\
-                            --env BODY='${body}' \\
-                            --env VUS=${vus} \\
-                            --env DURATION=${duration} \\
-                            --env TEST_TYPE=${testType} \\
-                            --env REPORT_NAME=${reportName} \\
-                            --env ISSUE_KEY=${issueKey} \\
-                            --out influxdb=http://host.docker.internal:8086/k6
-                        """
+                        k6Utils.run([
+                            url:        env.SERVICE_URL,
+                            method:     env.METHOD_RESOLVED,
+                            headers:    env.HEADERS   ?: params.HEADERS,
+                            body:       env.BODY       ?: params.BODY,
+                            vus:        env.VUS        ?: params.VUS,
+                            duration:   env.DURATION   ?: params.DURATION,
+                            testType:   env.TESTTYPE_RESOLVED,
+                            reportName: env.REPORT_NAME,
+                            issueKey:   env.ISSUE_KEY  ?: 'MANUAL'
+                        ])
                     }
                 }
             }
@@ -149,165 +120,60 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 script {
-                    def testType   = env.TESTTYPE_RESOLVED
-                    def reportPath = env.REPORT_PATH
-                    def jsonPath   = reportPath.replace('.html', '.json')
-
-                    def p95Threshold   = testType == 'stress' ? 2000 : 500
-                    def errorThreshold = testType == 'stress' ? 5.0  : 1.0
-
-                    echo "🔍 Evaluando Quality Gate..."
-                    echo "Tipo: ${testType.toUpperCase()}"
-                    echo "Umbral p95:   < ${p95Threshold}ms"
-                    echo "Umbral error: < ${errorThreshold}%"
-
-                    if (fileExists(jsonPath)) {
-                        def jsonText = readFile(jsonPath)
-                        def getVal = { String key ->
-                            def m = (jsonText =~ /"${key}"\s*:\s*([\d.]+)/)
-                            return m ? m[0][1].toDouble() : 0.0
-                        }
-
-                        def p95       = getVal('p95')
-                        def errorRate = getVal('errorRate') * 100
-
-                        echo "📊 P95 medido:        ${String.format('%.2f', p95)}ms"
-                        echo "📊 Error rate medido: ${String.format('%.2f', errorRate)}%"
-
-                        def p95Pass   = p95 < p95Threshold
-                        def errorPass = errorRate < errorThreshold
-
-                        if (p95Pass && errorPass) {
-                            echo "✅ QUALITY GATE PASSED"
-                            echo "   P95: ${String.format('%.2f', p95)}ms < ${p95Threshold}ms ✅"
-                            echo "   Error: ${String.format('%.2f', errorRate)}% < ${errorThreshold}% ✅"
-                            currentBuild.result = 'SUCCESS'
-                        } else {
-                            def msg = "❌ QUALITY GATE FAILED\n"
-                            if (!p95Pass)   msg += "   P95: ${String.format('%.2f', p95)}ms >= ${p95Threshold}ms ❌\n"
-                            if (!errorPass) msg += "   Error: ${String.format('%.2f', errorRate)}% >= ${errorThreshold}% ❌\n"
-                            currentBuild.result = 'FAILURE'
-                            error(msg)
-                        }
-                    } else {
-                        echo "⚠️ JSON de métricas no encontrado — omitiendo Quality Gate"
-                    }
+                    def jsonPath = env.REPORT_PATH.replace('.html', '.json')
+                    k6Utils.qualityGate(env.TESTTYPE_RESOLVED, jsonPath)
                 }
             }
         }
-        
+
         stage('Publicar Reporte') {
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'SUCCESS') {
                     script {
                         echo "📊 Reporte generado: ${env.REPORT_NAME}"
-                        echo "📁 Ruta: ${env.REPORT_PATH}"
                     }
                 }
             }
         }
     }
-    
+
     post {
         always {
             script {
                 def status     = currentBuild.result ?: 'SUCCESS'
-                def emoji      = status == 'SUCCESS' ? '✅' : '❌'
+                def issueKey   = env.ISSUE_KEY   ?: 'MANUAL'
                 def testType   = env.TESTTYPE_RESOLVED ?: params.TEST_TYPE ?: 'N/A'
                 def url        = env.SERVICE_URL       ?: params.SERVICE_URL
                 def method     = env.METHOD_RESOLVED   ?: params.METHOD
-                def issueKey   = env.ISSUE_KEY         ?: 'MANUAL'
                 def reportPath = env.REPORT_PATH       ?: 'k6/reports/dynamic-report.html'
                 def reportName = env.REPORT_NAME       ?: 'dynamic-report.html'
+                def jsonPath   = reportPath.replace('.html', '.json')
+                def metrics    = k6Utils.parseMetrics(jsonPath)
 
-                // ── Actualizar Jira y Confluence siempre ──
                 if (issueKey && issueKey != 'MANUAL') {
-                    def transitionId   = status == 'SUCCESS' ? '3' : '4'
-                    def transitionName = status == 'SUCCESS' ? 'Finalizado' : 'Fallido'
-                    def mensaje        = "${emoji} Performance Test completado. Build #${env.BUILD_NUMBER} - Estado: ${status}"
-                    def fecha          = new Date().format('yyyy-MM-dd HH:mm')
-                    def pageTitle      = "${issueKey} — ${testType?.toUpperCase()} — ${fecha}"
-                    def confluencePageId = '688129'
-
                     withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
-
-                        echo "🔄 Cambiando estado Jira a ${transitionName}..."
-                        sh """
-                            curl -s -X POST \\
-                            -H 'Content-Type: application/json' \\
-                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                            -d '{"transition": {"id": "${transitionId}"}}' \\
-                            'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/transitions'
-                        """
-
-                        echo "📝 Comentando en ${issueKey}..."
-                        sh """
-                            curl -s -X POST \\
-                            -H 'Content-Type: application/json' \\
-                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                            -d '{"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "${mensaje}"}]}]}}' \\
-                            'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/comment'
-                        """
-
-                        if (fileExists(reportPath)) {
-                            echo "📎 Adjuntando reporte en ${issueKey}..."
-                            sh """
-                                curl -s -X POST \\
-                                -H 'X-Atlassian-Token: no-check' \\
-                                -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                                -F 'file=@${reportPath}' \\
-                                'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/attachments'
-                            """
-                        }
-
-                        def jsonPath = reportPath.replace('.html', '.json')
-                        def iterations = '0'; def reqRate = '0/s'; def errorRate = '0.00%'
-                        def avg = '0ms'; def minD = '0ms'; def maxD = '0ms'
-                        def p50 = '0ms'; def p90 = '0ms'; def p95 = '0ms'; def p99 = '0ms'
-
-                        if (fileExists(jsonPath)) {
-                            def jsonText = readFile(jsonPath)
-                            def getVal = { String key ->
-                                def m = (jsonText =~ /"${key}"\s*:\s*([\d.]+)/)
-                                return m ? m[0][1] : '0'
-                            }
-                            iterations = getVal('iterations')
-                            reqRate    = String.format("%.2f", getVal('reqRate').toDouble()) + '/s'
-                            errorRate  = String.format("%.4f", getVal('errorRate').toDouble() * 100) + '%'
-                            avg        = String.format("%.2f", getVal('avg').toDouble())  + 'ms'
-                            minD       = String.format("%.2f", getVal('min').toDouble())  + 'ms'
-                            maxD       = String.format("%.2f", getVal('max').toDouble())  + 'ms'
-                            p50        = String.format("%.2f", getVal('p50').toDouble())  + 'ms'
-                            p90        = String.format("%.2f", getVal('p90').toDouble())  + 'ms'
-                            p95        = String.format("%.2f", getVal('p95').toDouble())  + 'ms'
-                            p99        = String.format("%.2f", getVal('p99').toDouble())  + 'ms'
-                        }
-
-                        echo "📚 Publicando en Confluence..."
-                        sh """
-                            curl -s -X POST \\
-                            -H 'Content-Type: application/json' \\
-                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                            -d '{
-                                "type": "page",
-                                "title": "${pageTitle}",
-                                "space": {"key": "PERF"},
-                                "ancestors": [{"id": "${confluencePageId}"}],
-                                "body": {
-                                "storage": {
-                                    "value": "<h2>${emoji} ${transitionName}</h2><p><strong>Issue:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${issueKey}</a> | <strong>Tipo:</strong> ${testType?.toUpperCase()} | <strong>Build:</strong> #${env.BUILD_NUMBER} | <strong>Estado:</strong> ${status}</p><h3>Summary</h3><table><tbody><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Iteraciones</td><td>${iterations}</td></tr><tr><td>Requests/seg</td><td>${reqRate}</td></tr><tr><td>Error Rate</td><td>${errorRate}</td></tr><tr><td>Avg</td><td>${avg}</td></tr><tr><td>Min</td><td>${minD}</td></tr><tr><td>Max</td><td>${maxD}</td></tr><tr><td>P50</td><td>${p50}</td></tr><tr><td>P90</td><td>${p90}</td></tr><tr><td>P95</td><td>${p95}</td></tr><tr><td>P99</td><td>${p99}</td></tr></tbody></table><p><strong>Reporte adjunto en Jira:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${reportName}</a></p>",
-                                    "representation": "storage"
-                                }
-                                }
-                            }' \\
-                            'https://mi-ecosistema.atlassian.net/wiki/rest/api/content'
-                        """
-                        echo "✅ Jira y Confluence actualizados!"
+                        jiraUtils.update([
+                            issueKey:    issueKey,
+                            status:      status,
+                            reportPath:  reportPath,
+                            reportName:  reportName,
+                            buildNumber: env.BUILD_NUMBER,
+                            token:       JIRA_TOKEN
+                        ])
+                        confluenceUtils.publish([
+                            token:       JIRA_TOKEN,
+                            issueKey:    issueKey,
+                            testType:    testType,
+                            buildNumber: env.BUILD_NUMBER,
+                            status:      status,
+                            reportName:  reportName,
+                            metrics:     metrics
+                        ])
                     }
                 }
 
-                // ── Email siempre ──
                 if (fileExists(reportPath)) {
+                    def emoji = status == 'SUCCESS' ? '✅' : '❌'
                     emailext(
                         to: params.EMAIL ?: 'newprojectcv.1999@gmail.com',
                         subject: "${emoji} Performance Report — ${testType.toUpperCase()} | ${method} ${url} | ${issueKey}",
@@ -319,10 +185,10 @@ pipeline {
                                 <tr><td><b>Método</b></td><td>${method}</td></tr>
                                 <tr><td><b>Tipo</b></td><td>${testType.toUpperCase()}</td></tr>
                                 <tr><td><b>Estado</b></td><td>${status}</td></tr>
-                                <tr><td><b>Reporte</b></td><td>${reportName}</td></tr>
+                                <tr><td><b>P95</b></td><td>${metrics.p95}</td></tr>
+                                <tr><td><b>Error Rate</b></td><td>${metrics.errorRate}</td></tr>
                             </table>
-                            <p>Ver reporte detallado en el archivo adjunto.</p>
-                            <p>Reporte también disponible en Confluence:
+                            <p>Reporte disponible en Confluence:
                             <a href="https://mi-ecosistema.atlassian.net/wiki/spaces/PERF">Performance Testing Space</a></p>
                         """,
                         attachmentsPattern: reportPath,
