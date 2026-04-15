@@ -198,8 +198,11 @@ pipeline {
         
         stage('Publicar Reporte') {
             steps {
-                script {
-                    echo "📊 Reporte generado: ${env.REPORT_NAME}"
+                catchError(buildResult: 'FAILURE', stageResult: 'SUCCESS') {
+                    script {
+                        echo "📊 Reporte generado: ${env.REPORT_NAME}"
+                        echo "📁 Ruta: ${env.REPORT_PATH}"
+                    }
                 }
             }
         }
