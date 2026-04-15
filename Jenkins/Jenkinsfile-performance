@@ -195,113 +195,7 @@ pipeline {
                 }
             }
         }
-
-        stage('Actualizar Jira y Confluence') {
-            when {
-                expression { env.ISSUE_KEY != null && env.ISSUE_KEY != 'MANUAL' }
-            }
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    script {
-                        def issueKey   = env.ISSUE_KEY
-                        def status     = currentBuild.result ?: 'SUCCESS'
-                        def emoji      = status == 'SUCCESS' ? '✅' : '❌'
-                        def mensaje    = "${emoji} Performance Test completado. Build #${env.BUILD_NUMBER} - Estado: ${status}"
-                        def reportPath = env.REPORT_PATH
-                        def reportName = env.REPORT_NAME
-                        def testType   = env.TESTTYPE_RESOLVED
-                        def fecha      = new Date().format('yyyy-MM-dd HH:mm')
-
-                        def transitionId   = status == 'SUCCESS' ? '3' : '4'
-                        def transitionName = status == 'SUCCESS' ? 'Finalizado' : 'Fallido'
-
-                        def confluencePageId = issueKey.startsWith('ME') ? '688129' : '688129'
-                        def pageTitle = "${issueKey} — ${testType?.toUpperCase()} — ${fecha}"
-
-                        withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
-
-                            echo "🔄 Cambiando estado a ${transitionName}..."
-                            sh """
-                                curl -s -X POST \\
-                                  -H 'Content-Type: application/json' \\
-                                  -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                                  -d '{"transition": {"id": "${transitionId}"}}' \\
-                                  'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/transitions'
-                            """
-
-                            echo "📝 Agregando comentario en ${issueKey}..."
-                            sh """
-                                curl -s -X POST \\
-                                  -H 'Content-Type: application/json' \\
-                                  -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                                  -d '{"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "${mensaje}"}]}]}}' \\
-                                  'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/comment'
-                            """
-
-                            echo "📎 Adjuntando ${reportName} en ${issueKey}..."
-                            sh """
-                                curl -s -X POST \\
-                                  -H 'X-Atlassian-Token: no-check' \\
-                                  -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                                  -F 'file=@${reportPath}' \\
-                                  'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/attachments'
-                            """
-
-                            def jsonName = reportName.replace('.html', '.json')
-                            def jsonPath = reportPath.replace('.html', '.json')
-
-                            def iterations = '0'
-                            def errorRate  = '0.00%'
-                            def p50 = '0ms'; def p90 = '0ms'
-                            def p95 = '0ms'; def p99 = '0ms'
-                            def avg = '0ms'; def minD = '0ms'; def maxD = '0ms'
-                            def reqRate = '0/s'
-
-                            if (fileExists(jsonPath)) {
-                                def jsonText = readFile(jsonPath)
-                                def getVal = { String key ->
-                                    def m = (jsonText =~ /"${key}"\s*:\s*([\d.]+)/)
-                                    return m ? m[0][1] : '0'
-                                }
-                                iterations = getVal('iterations')
-                                reqRate    = String.format("%.2f", getVal('reqRate').toDouble()) + '/s'
-                                errorRate  = String.format("%.4f", getVal('errorRate').toDouble() * 100) + '%'
-                                avg        = String.format("%.2f", getVal('avg').toDouble())  + 'ms'
-                                minD       = String.format("%.2f", getVal('min').toDouble())  + 'ms'
-                                maxD       = String.format("%.2f", getVal('max').toDouble())  + 'ms'
-                                p50        = String.format("%.2f", getVal('p50').toDouble())  + 'ms'
-                                p90        = String.format("%.2f", getVal('p90').toDouble())  + 'ms'
-                                p95        = String.format("%.2f", getVal('p95').toDouble())  + 'ms'
-                                p99        = String.format("%.2f", getVal('p99').toDouble())  + 'ms'
-                            }
-
-                            echo "📚 Publicando en Confluence..."
-                            sh """
-                                curl -s -X POST \\
-                                -H 'Content-Type: application/json' \\
-                                -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
-                                -d '{
-                                    "type": "page",
-                                    "title": "${pageTitle}",
-                                    "space": {"key": "PERF"},
-                                    "ancestors": [{"id": "${confluencePageId}"}],
-                                    "body": {
-                                    "storage": {
-                                        "value": "<h2>${emoji} ${transitionName}</h2><p><strong>Issue:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${issueKey}</a> | <strong>Tipo:</strong> ${testType?.toUpperCase()} | <strong>Build:</strong> #${env.BUILD_NUMBER} | <strong>Estado:</strong> ${status}</p><h3>Summary</h3><table><tbody><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Iteraciones</td><td>${iterations}</td></tr><tr><td>Requests/seg</td><td>${reqRate}</td></tr><tr><td>Error Rate</td><td>${errorRate}</td></tr><tr><td>Avg</td><td>${avg}</td></tr><tr><td>Min</td><td>${minD}</td></tr><tr><td>Max</td><td>${maxD}</td></tr><tr><td>P50</td><td>${p50}</td></tr><tr><td>P90</td><td>${p90}</td></tr><tr><td>P95</td><td>${p95}</td></tr><tr><td>P99</td><td>${p99}</td></tr></tbody></table><p><strong>Reporte completo adjunto en Jira:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${reportName}</a></p>",
-                                        "representation": "storage"
-                                    }
-                                    }
-                                }' \\
-                                'https://mi-ecosistema.atlassian.net/wiki/rest/api/content'
-                            """
-
-                            echo "✅ Jira y Confluence actualizados!"
-                        }
-                    }
-                }
-            }
-        }
-
+        
         stage('Publicar Reporte') {
             steps {
                 script {
@@ -310,7 +204,7 @@ pipeline {
             }
         }
     }
-
+    
     post {
         always {
             script {
@@ -323,6 +217,93 @@ pipeline {
                 def reportPath = env.REPORT_PATH       ?: 'k6/reports/dynamic-report.html'
                 def reportName = env.REPORT_NAME       ?: 'dynamic-report.html'
 
+                // ── Actualizar Jira y Confluence siempre ──
+                if (issueKey && issueKey != 'MANUAL') {
+                    def transitionId   = status == 'SUCCESS' ? '3' : '4'
+                    def transitionName = status == 'SUCCESS' ? 'Finalizado' : 'Fallido'
+                    def mensaje        = "${emoji} Performance Test completado. Build #${env.BUILD_NUMBER} - Estado: ${status}"
+                    def fecha          = new Date().format('yyyy-MM-dd HH:mm')
+                    def pageTitle      = "${issueKey} — ${testType?.toUpperCase()} — ${fecha}"
+                    def confluencePageId = '688129'
+
+                    withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
+
+                        echo "🔄 Cambiando estado Jira a ${transitionName}..."
+                        sh """
+                            curl -s -X POST \\
+                            -H 'Content-Type: application/json' \\
+                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                            -d '{"transition": {"id": "${transitionId}"}}' \\
+                            'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/transitions'
+                        """
+
+                        echo "📝 Comentando en ${issueKey}..."
+                        sh """
+                            curl -s -X POST \\
+                            -H 'Content-Type: application/json' \\
+                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                            -d '{"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "${mensaje}"}]}]}}' \\
+                            'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/comment'
+                        """
+
+                        if (fileExists(reportPath)) {
+                            echo "📎 Adjuntando reporte en ${issueKey}..."
+                            sh """
+                                curl -s -X POST \\
+                                -H 'X-Atlassian-Token: no-check' \\
+                                -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                                -F 'file=@${reportPath}' \\
+                                'https://mi-ecosistema.atlassian.net/rest/api/3/issue/${issueKey}/attachments'
+                            """
+                        }
+
+                        def jsonPath = reportPath.replace('.html', '.json')
+                        def iterations = '0'; def reqRate = '0/s'; def errorRate = '0.00%'
+                        def avg = '0ms'; def minD = '0ms'; def maxD = '0ms'
+                        def p50 = '0ms'; def p90 = '0ms'; def p95 = '0ms'; def p99 = '0ms'
+
+                        if (fileExists(jsonPath)) {
+                            def jsonText = readFile(jsonPath)
+                            def getVal = { String key ->
+                                def m = (jsonText =~ /"${key}"\s*:\s*([\d.]+)/)
+                                return m ? m[0][1] : '0'
+                            }
+                            iterations = getVal('iterations')
+                            reqRate    = String.format("%.2f", getVal('reqRate').toDouble()) + '/s'
+                            errorRate  = String.format("%.4f", getVal('errorRate').toDouble() * 100) + '%'
+                            avg        = String.format("%.2f", getVal('avg').toDouble())  + 'ms'
+                            minD       = String.format("%.2f", getVal('min').toDouble())  + 'ms'
+                            maxD       = String.format("%.2f", getVal('max').toDouble())  + 'ms'
+                            p50        = String.format("%.2f", getVal('p50').toDouble())  + 'ms'
+                            p90        = String.format("%.2f", getVal('p90').toDouble())  + 'ms'
+                            p95        = String.format("%.2f", getVal('p95').toDouble())  + 'ms'
+                            p99        = String.format("%.2f", getVal('p99').toDouble())  + 'ms'
+                        }
+
+                        echo "📚 Publicando en Confluence..."
+                        sh """
+                            curl -s -X POST \\
+                            -H 'Content-Type: application/json' \\
+                            -u 'newprojectcv.1999@gmail.com:${JIRA_TOKEN}' \\
+                            -d '{
+                                "type": "page",
+                                "title": "${pageTitle}",
+                                "space": {"key": "PERF"},
+                                "ancestors": [{"id": "${confluencePageId}"}],
+                                "body": {
+                                "storage": {
+                                    "value": "<h2>${emoji} ${transitionName}</h2><p><strong>Issue:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${issueKey}</a> | <strong>Tipo:</strong> ${testType?.toUpperCase()} | <strong>Build:</strong> #${env.BUILD_NUMBER} | <strong>Estado:</strong> ${status}</p><h3>Summary</h3><table><tbody><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Iteraciones</td><td>${iterations}</td></tr><tr><td>Requests/seg</td><td>${reqRate}</td></tr><tr><td>Error Rate</td><td>${errorRate}</td></tr><tr><td>Avg</td><td>${avg}</td></tr><tr><td>Min</td><td>${minD}</td></tr><tr><td>Max</td><td>${maxD}</td></tr><tr><td>P50</td><td>${p50}</td></tr><tr><td>P90</td><td>${p90}</td></tr><tr><td>P95</td><td>${p95}</td></tr><tr><td>P99</td><td>${p99}</td></tr></tbody></table><p><strong>Reporte adjunto en Jira:</strong> <a href=\\"https://mi-ecosistema.atlassian.net/browse/${issueKey}\\">${reportName}</a></p>",
+                                    "representation": "storage"
+                                }
+                                }
+                            }' \\
+                            'https://mi-ecosistema.atlassian.net/wiki/rest/api/content'
+                        """
+                        echo "✅ Jira y Confluence actualizados!"
+                    }
+                }
+
+                // ── Email siempre ──
                 if (fileExists(reportPath)) {
                     emailext(
                         to: params.EMAIL ?: 'newprojectcv.1999@gmail.com',
