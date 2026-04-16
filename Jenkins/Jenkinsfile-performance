@@ -98,6 +98,13 @@ pipeline {
         }
 
         stage('Ejecutar Prueba') {
+            agent {
+                docker {
+                    image 'ghcr.io/ghostnoc99/k6-performance:latest'
+                    args "--entrypoint='' --network host -v /var/jenkins_home/workspace/performance-on-demand/k6/reports:/k6/reports"
+                    reuseNode true
+                }
+            }
             steps {
                 script {
                     catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
