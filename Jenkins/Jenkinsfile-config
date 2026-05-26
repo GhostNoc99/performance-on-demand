@@ -134,7 +134,7 @@ pipeline {
                               -e PRE_ALLOC_VUS=${env.PRE_ALLOC_VUS} \\
                               -e SERVICE_NAME=${env.SERVICE_NAME} \\
                               -e REPORT_NAME=${env.REPORT_NAME} \\
-                              k6/config-driven-test.js
+                              k6/test-config-driven.js
                         """
                     }
                 }
