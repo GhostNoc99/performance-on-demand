@@ -150,29 +150,32 @@ pipeline {
             }
         }
     }
-
     post {
         always {
             script {
-                def status     = currentBuild.result ?: 'SUCCESS'
-                def jsonPath   = env.REPORT_PATH.replace('.html', '.json')
-                def metrics    = k6Utils.parseMetrics(jsonPath)
+                if (env.REPORT_PATH) {
+                    def status   = currentBuild.result ?: 'SUCCESS'
+                    def jsonPath = env.REPORT_PATH.replace('.html', '.json')
+                    def metrics  = k6Utils.parseMetrics(jsonPath)
 
-                withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
-                    confluenceUtils.publish([
-                        token:       JIRA_TOKEN,
-                        issueKey:    "CONFIG-${env.SERVICE_NAME}",
-                        testType:    'load',
-                        buildNumber: env.BUILD_NUMBER,
-                        status:      status,
-                        reportName:  env.REPORT_NAME,
-                        metrics:     metrics
-                    ])
+                    withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
+                        confluenceUtils.publish([
+                            token:       JIRA_TOKEN,
+                            issueKey:    "CONFIG-${env.SERVICE_NAME}",
+                            testType:    'load',
+                            buildNumber: env.BUILD_NUMBER,
+                            status:      status,
+                            reportName:  env.REPORT_NAME,
+                            metrics:     metrics
+                        ])
+                    }
+                } else {
+                    echo "⚠️ Pipeline falló antes de derivar parámetros — sin reporte"
                 }
             }
         }
         success { echo "✅ Config-driven pipeline completado — ${env.SERVICE_NAME}" }
-        failure { echo "❌ Quality Gate fallido — revisar umbrales en Grafana" }
+        failure { echo "❌ Pipeline fallido — revisar consola" }
     }
 }
 
