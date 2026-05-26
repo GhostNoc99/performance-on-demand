@@ -1,0 +1,209 @@
+@Library('performance-lib') _
+
+pipeline {
+    agent any
+
+    triggers {
+        GenericTrigger(
+            genericVariables: [
+                [key: 'CONFIG_FILE', value: '$.commits[0].modified[0]'],
+                [key: 'REPO_NAME',   value: '$.repository.name'],
+            ],
+            token: 'github-performance-configs',
+            printContributedVariables: true,
+            printPostContent: true
+        )
+    }
+
+    parameters {
+        string(
+            name: 'CONFIG_FILE',
+            defaultValue: 'mi-ecosistema/health-service.yml',
+            description: 'Ruta del yml dentro de performance-configs'
+        )
+    }
+
+    environment {
+        CONFIGS_REPO = 'https://github.com/GhostNoc99/performance-configs.git'
+    }
+
+    stages {
+
+        stage('Checkout pipeline repo') {
+            steps {
+                echo '📥 Bajando código de performance-on-demand...'
+                git branch: 'main',
+                    url: 'https://github.com/GhostNoc99/performance-on-demand.git'
+            }
+        }
+
+        stage('Leer configuración') {
+            steps {
+                script {
+                    // Clonar performance-configs en subcarpeta
+                    dir('performance-configs') {
+                        git branch: 'main', url: env.CONFIGS_REPO
+                    }
+
+                    def configPath = "performance-configs/${params.CONFIG_FILE}"
+                    def config = readYaml file: configPath
+
+                    env.SERVICE_NAME  = config.service.name
+                    env.SERVICE_URL   = config.service.url
+                    env.HTTP_METHOD   = config.service.method
+                    env.TIPO_SERVICIO = config.cuestionario.tipo_servicio
+                    env.COMPLEJIDAD   = config.cuestionario.complejidad
+                    env.OPERACION     = config.cuestionario.operacion
+                    env.BD            = config.cuestionario.bd
+
+                    echo "✅ Config cargada: ${env.SERVICE_NAME}"
+                    echo "   tipo=${env.TIPO_SERVICIO} | comp=${env.COMPLEJIDAD} | op=${env.OPERACION} | bd=${env.BD}"
+                }
+            }
+        }
+
+        stage('Derivar parámetros') {
+            steps {
+                script {
+                    def p = derivarParametros(
+                        env.TIPO_SERVICIO,
+                        env.COMPLEJIDAD,
+                        env.OPERACION,
+                        env.BD
+                    )
+
+                    env.TPS           = "${p.tps}"
+                    env.DURATION      = p.duration
+                    env.RAMP_UP       = "${p.rampUp}"
+                    env.P95_THRESHOLD = "${p.p95}"
+                    env.ERROR_RATE    = "${p.errorRate}"
+                    env.PRE_ALLOC_VUS = "${p.preAllocVUs}"
+                    env.DATOS_MINIMOS = "${p.datosMin}"
+                    env.MIX_RW        = p.mix
+
+                    def fecha      = new Date().format('yyyy-MM-dd_HH-mm')
+                    env.REPORT_NAME = "CONFIGDRIVEN_${env.SERVICE_NAME}_${fecha}.html"
+                    env.REPORT_PATH = "k6/reports/${env.REPORT_NAME}"
+
+                    currentBuild.description = "⚙️ CONFIG | ${env.SERVICE_NAME} | ${env.TPS} TPS | ${env.DURATION}"
+
+                    echo "✅ Parámetros derivados:"
+                    echo "   TPS=${env.TPS} | DURATION=${env.DURATION} | RAMP_UP=${env.RAMP_UP}s"
+                    echo "   P95=${env.P95_THRESHOLD}ms | preAllocVUs=${env.PRE_ALLOC_VUS}"
+                    echo "   Datos mínimos=${env.DATOS_MINIMOS} | Mix=${env.MIX_RW}"
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                script {
+                    echo "🧪 Verificando que el servicio responde..."
+                    def response = sh(
+                        script: "curl -s -o /dev/null -w '%{http_code}' ${env.SERVICE_URL}",
+                        returnStdout: true
+                    ).trim()
+                    echo "Código de respuesta: ${response}"
+                    if (response == "000") {
+                        error("❌ El servicio no responde en ${env.SERVICE_URL}")
+                    }
+                }
+            }
+        }
+
+        stage('Ejecutar Prueba') {
+            agent {
+                docker {
+                    image 'ghcr.io/ghostnoc99/k6-performance:latest'
+                    args  "--entrypoint='' --network host -v /var/jenkins_home/workspace/config-driven-performance/k6/reports:/k6/reports"
+                    reuseNode true
+                }
+            }
+            steps {
+                script {
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                        sh """
+                            k6 run \\
+                              -e URL=${env.SERVICE_URL} \\
+                              -e METHOD=${env.HTTP_METHOD} \\
+                              -e TPS=${env.TPS} \\
+                              -e DURATION=${env.DURATION} \\
+                              -e RAMP_UP=${env.RAMP_UP} \\
+                              -e P95_THRESHOLD=${env.P95_THRESHOLD} \\
+                              -e ERROR_RATE=${env.ERROR_RATE} \\
+                              -e PRE_ALLOC_VUS=${env.PRE_ALLOC_VUS} \\
+                              -e SERVICE_NAME=${env.SERVICE_NAME} \\
+                              -e REPORT_NAME=${env.REPORT_NAME} \\
+                              k6/config-driven-test.js
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def jsonPath = env.REPORT_PATH.replace('.html', '.json')
+                    k6Utils.qualityGate('load', jsonPath)
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                def status     = currentBuild.result ?: 'SUCCESS'
+                def jsonPath   = env.REPORT_PATH.replace('.html', '.json')
+                def metrics    = k6Utils.parseMetrics(jsonPath)
+
+                withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
+                    confluenceUtils.publish([
+                        token:       JIRA_TOKEN,
+                        issueKey:    "CONFIG-${env.SERVICE_NAME}",
+                        testType:    'load',
+                        buildNumber: env.BUILD_NUMBER,
+                        status:      status,
+                        reportName:  env.REPORT_NAME,
+                        metrics:     metrics
+                    ])
+                }
+            }
+        }
+        success { echo "✅ Config-driven pipeline completado — ${env.SERVICE_NAME}" }
+        failure { echo "❌ Quality Gate fallido — revisar umbrales en Grafana" }
+    }
+}
+
+// ================================================================
+// TABLA DE DERIVACIÓN — Estándar v2.0
+// ================================================================
+def derivarParametros(String tipo, String comp, String op, String bd) {
+
+    if (tipo == 'MICROSERVICIO' && comp == 'BAJA' && op == 'LECTURA' && bd == 'SQL_ONPREMISE')
+        return [tps:8,  duration:'10m', rampUp:60, p95:2000, errorRate:0.01, preAllocVUs:24, datosMin:500,  mix:'100R']
+
+    if (tipo == 'MICROSERVICIO' && comp == 'BAJA' && op == 'LECTURA' && bd == 'NOSQL_NUBE')
+        return [tps:10, duration:'10m', rampUp:60, p95:1500, errorRate:0.01, preAllocVUs:30, datosMin:500,  mix:'100R']
+
+    if (tipo == 'MICROSERVICIO' && comp == 'MEDIA' && op == 'MIXTA' && bd == 'SQL_ONPREMISE')
+        return [tps:15, duration:'15m', rampUp:60, p95:2000, errorRate:0.01, preAllocVUs:45, datosMin:2000, mix:'70R30W']
+
+    if (tipo == 'MICROSERVICIO' && comp == 'MEDIA' && op == 'MIXTA' && bd == 'NOSQL_NUBE')
+        return [tps:20, duration:'15m', rampUp:60, p95:1500, errorRate:0.01, preAllocVUs:60, datosMin:2000, mix:'70R30W']
+
+    if (tipo == 'MICROSERVICIO' && comp == 'ALTA' && op == 'MIXTA' && bd == 'SQL_ONPREMISE')
+        return [tps:25, duration:'20m', rampUp:60, p95:2000, errorRate:0.01, preAllocVUs:75, datosMin:5000, mix:'60R40W']
+
+    if (tipo == 'MICROSERVICIO' && comp == 'ALTA' && op == 'MIXTA' && bd == 'NOSQL_NUBE')
+        return [tps:30, duration:'20m', rampUp:60, p95:1500, errorRate:0.01, preAllocVUs:90, datosMin:5000, mix:'60R40W']
+
+    if (tipo == 'ORQUESTADOR' && comp == 'MEDIA' && op == 'ORQUESTADA' && bd == 'SQL_ONPREMISE')
+        return [tps:10, duration:'15m', rampUp:60, p95:4000, errorRate:0.01, preAllocVUs:40, datosMin:2000, mix:'N/A']
+
+    if (tipo == 'ORQUESTADOR' && comp == 'ALTA' && op == 'ORQUESTADA' && bd == 'NOSQL_NUBE')
+        return [tps:18, duration:'20m', rampUp:60, p95:4000, errorRate:0.01, preAllocVUs:72, datosMin:5000, mix:'N/A']
+
+    error "❌ Combinación no definida en estándar v2.0: tipo=${tipo} comp=${comp} op=${op} bd=${bd}"
+}
