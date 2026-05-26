@@ -1,0 +1,514 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reporte k6</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f4f7fb;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: 32px;
+      color: #111827;
+    }
+
+    .title-block p {
+      margin: 8px 0 0;
+      color: #6b7280;
+      font-size: 14px;
+    }
+
+    .badge {
+      padding: 12px 20px;
+      border-radius: 999px;
+      font-weight: bold;
+      font-size: 14px;
+      color: white;
+      min-width: 110px;
+      text-align: center;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    }
+
+    .badge.pass {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+    }
+
+    .badge.fail {
+      background: linear-gradient(135deg, #dc2626, #ef4444);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+      border: 1px solid #e5e7eb;
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .metric {
+      font-size: 30px;
+      font-weight: bold;
+      color: #111827;
+    }
+
+    .subtext {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    .section {
+      background: white;
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+      border: 1px solid #e5e7eb;
+      margin-bottom: 24px;
+    }
+
+    .section h2 {
+      margin-top: 0;
+      margin-bottom: 18px;
+      font-size: 22px;
+      color: #111827;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    th, td {
+      padding: 14px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f9fafb;
+      color: #374151;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: bold;
+      color: white;
+    }
+
+    .pill.pass {
+      background: #16a34a;
+    }
+
+    .pill.fail {
+      background: #dc2626;
+    }
+
+    details {
+      margin-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: #2563eb;
+      margin-bottom: 12px;
+    }
+
+    pre {
+      background: #0f172a;
+      color: #e5e7eb;
+      padding: 18px;
+      border-radius: 14px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title-block">
+        <h1>Reporte de Performance k6</h1>
+        <p><strong>Archivo:</strong> summary-2026-05-26T22-19-56-407Z.json</p>
+        <p><strong>Generado:</strong> 2026-05-26 22:19:56</p>
+      </div>
+      <div class="badge pass">PASS</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Total Requests</h3>
+        <div class="metric">20</div>
+        <div class="subtext">Solicitudes HTTP ejecutadas</div>
+      </div>
+
+      <div class="card">
+        <h3>Checks Exitosos</h3>
+        <div class="metric">10</div>
+        <div class="subtext">Validaciones aprobadas</div>
+      </div>
+
+      <div class="card">
+        <h3>Checks Fallidos</h3>
+        <div class="metric">0</div>
+        <div class="subtext">Validaciones fallidas</div>
+      </div>
+
+      <div class="card">
+        <h3>Error Rate</h3>
+        <div class="metric">0</div>
+        <div class="subtext">Tasa de error HTTP</div>
+      </div>
+
+      <div class="card">
+        <h3>Avg Duration</h3>
+        <div class="metric">29.500915199999998</div>
+        <div class="subtext">Tiempo promedio de respuesta</div>
+      </div>
+
+      <div class="card">
+        <h3>P95</h3>
+        <div class="metric">48.5575059</div>
+        <div class="subtext">Percentil 95</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Resumen Ejecutivo</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Métrica</th>
+            <th>Valor</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Iteraciones</td>
+            <td>10</td>
+            <td><span class="pill pass">INFO</span></td>
+          </tr>
+          <tr>
+            <td>HTTP Requests</td>
+            <td>20</td>
+            <td><span class="pill pass">INFO</span></td>
+          </tr>
+          <tr>
+            <td>Checks Exitosos</td>
+            <td>10</td>
+            <td><span class="pill pass">OK</span></td>
+          </tr>
+          <tr>
+            <td>Checks Fallidos</td>
+            <td>0</td>
+            <td><span class="pill pass">OK</span></td>
+          </tr>
+          <tr>
+            <td>Duración Promedio</td>
+            <td>29.500915199999998</td>
+            <td><span class="pill pass">INFO</span></td>
+          </tr>
+          <tr>
+            <td>P90</td>
+            <td>48.5467498</td>
+            <td><span class="pill pass">INFO</span></td>
+          </tr>
+          <tr>
+            <td>P95</td>
+            <td>48.5575059</td>
+            <td><span class="pill pass">INFO</span></td>
+          </tr>
+          <tr>
+            <td>Error Rate</td>
+            <td>0</td>
+            <td><span class="pill pass">PASS</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Detalle Técnico</h2>
+      <details>
+        <summary>Ver JSON completo</summary>
+        <pre>{
+  "root_group": {
+    "checks": [
+      {
+        "fails": 0,
+        "name": "status es 200",
+        "path": "::status es 200",
+        "id": "c8f562f01bcdf8f7be8c15f6ad60295d",
+        "passes": 10
+      }
+    ],
+    "name": "",
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e",
+    "groups": []
+  },
+  "options": {
+    "summaryTimeUnit": "",
+    "noColor": false,
+    "summaryTrendStats": [
+      "avg",
+      "min",
+      "med",
+      "max",
+      "p(90)",
+      "p(95)"
+    ]
+  },
+  "state": {
+    "isStdOutTTY": false,
+    "isStdErrTTY": false,
+    "testRunDurationMs": 10866.733741
+  },
+  "metrics": {
+    "http_req_blocked": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 165.596747,
+        "p(90)": 10.113733700000143,
+        "p(95)": 104.35327940000003,
+        "avg": 13.33672895,
+        "min": 0.0003,
+        "med": 0.0004255
+      }
+    },
+    "checks": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "fails": 0,
+        "rate": 1,
+        "passes": 10
+      }
+    },
+    "http_req_connecting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 2.89418885,
+        "min": 0,
+        "med": 0,
+        "max": 47.750092,
+        "p(90)": 1.0133685000000143,
+        "p(95)": 12.014505350000027
+      }
+    },
+    "vus_max": {
+      "contains": "default",
+      "values": {
+        "min": 1,
+        "max": 1,
+        "value": 1
+      },
+      "type": "gauge"
+    },
+    "http_req_failed": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 20
+      }
+    },
+    "data_sent": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 4423,
+        "rate": 407.02202754007834
+      }
+    },
+    "http_req_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 29.610863000000002,
+        "max": 48.652295,
+        "p(90)": 48.5467498,
+        "p(95)": 48.5575059,
+        "avg": 29.500915199999998,
+        "min": 10.485301
+      }
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 1.1186929000000159,
+        "p(95)": 13.227083500000028,
+        "avg": 3.1588474,
+        "min": 0,
+        "med": 0,
+        "max": 51.990019
+      }
+    },
+    "http_req_receiving": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 0.13305570000000003,
+        "p(95)": 0.1456872,
+        "avg": 0.08549245000000001,
+        "min": 0.047969,
+        "med": 0.07763,
+        "max": 0.156084
+      }
+    },
+    "vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 1,
+        "min": 1,
+        "max": 1
+      }
+    },
+    "http_req_duration{expected_response:true}": {
+      "contains": "time",
+      "values": {
+        "min": 10.485301,
+        "med": 29.610863000000002,
+        "max": 48.652295,
+        "p(90)": 48.5467498,
+        "p(95)": 48.5575059,
+        "avg": 29.500915199999998
+      },
+      "type": "trend"
+    },
+    "http_req_sending": {
+      "values": {
+        "p(95)": 0.16054775000000007,
+        "avg": 0.08786815000000003,
+        "min": 0.04329,
+        "med": 0.0821225,
+        "max": 0.239906,
+        "p(90)": 0.10273910000000008
+      },
+      "type": "trend",
+      "contains": "time"
+    },
+    "http_req_waiting": {
+      "values": {
+        "avg": 29.327554600000003,
+        "min": 10.279129,
+        "med": 29.475274,
+        "max": 48.407758,
+        "p(90)": 48.3598572,
+        "p(95)": 48.38593745
+      },
+      "type": "trend",
+      "contains": "time"
+    },
+    "iterations": {
+      "values": {
+        "count": 10,
+        "rate": 0.9202397186074572
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "data_received": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 46313,
+        "rate": 4261.906208786717
+      }
+    },
+    "iteration_duration": {
+      "contains": "time",
+      "values": {
+        "med": 1059.970519,
+        "max": 1327.213957,
+        "p(90)": 1087.4228017,
+        "p(95)": 1207.3183793499998,
+        "avg": 1086.630328,
+        "min": 1059.283584
+      },
+      "type": "trend"
+    },
+    "http_reqs": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 1.8404794372149145,
+        "count": 20
+      }
+    }
+  }
+}</pre>
+      </details>
+    </div>
+
+    <div class="footer">
+      Reporte generado automáticamente por GitHub Actions + k6
+    </div>
+  </div>
+</body>
+</html>
