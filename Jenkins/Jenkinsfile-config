@@ -15,13 +15,13 @@ pipeline {
         )
     }
 
-    parameters {
+    /*parameters {
         string(
             name:         'CONFIG_FILE',
             defaultValue: 'mi-ecosistema/ME-46/health-service.yml',
             description:  'Ruta del yml — Jenkins detecta la carpeta y ejecuta todos los ymls de ella'
         )
-    }
+    }*/
 
     environment {
         CONFIGS_REPO = 'https://github.com/GhostNoc99/performance-configs.git'
@@ -46,10 +46,9 @@ pipeline {
                 script {
 
                     // Prioridad: webhook added → webhook modified → manual
-                    def configFile = (env.CONFIG_FILE_ADDED?.trim())
-                                ?: (env.CONFIG_FILE_MODIFIED?.trim())
-                                ?: (params.CONFIG_FILE_MANUAL?.trim())
-
+                    def configFile = (env.CONFIG_FILE?.trim()) 
+                            ?: (env.CONFIG_FILE_ADDED?.trim())
+                            
                     echo "📌 CONFIG_FILE detectado: ${configFile}"
 
                     if (!configFile || configFile.split('/').size() < 3) {
