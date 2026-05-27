@@ -212,13 +212,18 @@ pipeline {
             script {
                 def status  = currentBuild.result ?: 'SUCCESS'
                 def emoji   = status == 'SUCCESS' ? '✅' : '❌'
-                def resumen = []
+                /*def resumen = []
 
                 try {
                     resumen = new groovy.json.JsonSlurper()
                                   .parseText(env.RESUMEN_JSON ?: '[]')
                 } catch(e) {
                     echo "⚠️ No se pudo parsear el resumen"
+                }*/
+
+                def resumen = []
+                if (env.RESUMEN_JSON) {
+                    resumen = readJSON text: env.RESUMEN_JSON
                 }
 
                 // ── 1. Artifacts en Jenkins ──────────────────
