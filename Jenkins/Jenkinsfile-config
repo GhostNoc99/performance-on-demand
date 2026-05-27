@@ -18,7 +18,7 @@ pipeline {
     parameters {
         string(
             name:         'CONFIG_FILE',
-            defaultValue: 'mi-ecosistema/ME-001/health-service.yml',
+            defaultValue: 'mi-ecosistema/ME-46/health-service.yml',
             description:  'Ruta del yml — Jenkins detecta la carpeta y ejecuta todos los ymls de ella'
         )
     }
@@ -45,18 +45,28 @@ pipeline {
             steps {
                 script {
 
-                    def configFile = (env.CONFIG_FILE_ADDED?.trim()) 
-                                    ?: (env.CONFIG_FILE_MODIFIED?.trim())
+                    // Prioridad: webhook added → webhook modified → manual
+                    def configFile = (env.CONFIG_FILE_ADDED?.trim())
+                                ?: (env.CONFIG_FILE_MODIFIED?.trim())
+                                ?: (params.CONFIG_FILE_MANUAL?.trim())
+
+                    echo "📌 CONFIG_FILE detectado: ${configFile}"
 
                     if (!configFile || configFile.split('/').size() < 3) {
-                        error "❌ No se detectó yml válido con estructura proyecto/issue/servicio.yml"
+                        error "❌ No se detectó yml válido con estructura proyecto/issue/servicio.yml — valor: '${configFile}'"
                     }
+
                     // CONFIG_FILE = mi-ecosistema/ME-001/health-service.yml
                     def parts     = params.CONFIG_FILE.split('/')
                     env.PROYECTO  = parts[0]                       // mi-ecosistema
                     env.ISSUE_KEY = parts[1]                       // ME-001
                     env.CARPETA   = "${parts[0]}/${parts[1]}"      // mi-ecosistema/ME-001
                     env.FECHA     = new Date().format('yyyy-MM-dd_HH-mm')
+
+                    echo "✅ Proyecto:  ${env.PROYECTO}"
+                    echo "✅ Issue:     ${env.ISSUE_KEY}"
+                    echo "✅ Carpeta:   ${env.CARPETA}"
+
 
                     // Clonar performance-configs
                     dir('performance-configs') {
