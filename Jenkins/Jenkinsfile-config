@@ -60,7 +60,7 @@ pipeline {
                     }
 
                     // CONFIG_FILE = mi-ecosistema/ME-001/health-service.yml
-                    def parts     = params.CONFIG_FILE.split('/')
+                    def parts     = params.configFile.split('/')
                     env.PROYECTO  = parts[0]                       // mi-ecosistema
                     env.ISSUE_KEY = parts[1]                       // ME-001
                     env.CARPETA   = "${parts[0]}/${parts[1]}"      // mi-ecosistema/ME-001
