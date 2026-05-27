@@ -44,6 +44,14 @@ pipeline {
         // ────────────────────────────────────────────────
             steps {
                 script {
+
+                    def configFile = params.CONFIG_FILE?.trim()
+
+                    // Validar estructura proyecto/issue/servicio.yml
+                    if (!configFile || configFile.startsWith('_') || configFile.split('/').size() < 3) {
+                        error "❌ CONFIG_FILE inválido o no es un yml de servicio: '${configFile}'"
+                    }    
+
                     // CONFIG_FILE = mi-ecosistema/ME-001/health-service.yml
                     def parts     = params.CONFIG_FILE.split('/')
                     env.PROYECTO  = parts[0]                       // mi-ecosistema
