@@ -6,12 +6,16 @@ pipeline {
     triggers {
         GenericTrigger(
             genericVariables: [
-                [key: 'CONFIG_FILE', value: '$.commits[0].modified[0]'],
-                [key: 'REPO_NAME',   value: '$.repository.name'],
+                [key: 'CONFIG_FILE',       value: '$.commits[0].modified[0]', defaultValue: ''],
+                [key: 'CONFIG_FILE_ADDED', value: '$.commits[0].added[0]',    defaultValue: ''],
+                [key: 'REPO_NAME',         value: '$.repository.name',        defaultValue: ''],
             ],
-            token: 'github-performance-configs',
+            token:                  'github-performance-configs',
+            causeString:            'GitHub push en $REPO_NAME — $CONFIG_FILE$CONFIG_FILE_ADDED',
+            regexpFilterText:       '$CONFIG_FILE$CONFIG_FILE_ADDED',
+            regexpFilterExpression: '^[^_][^/]+/[^/]+/[^/]+\\.yml$',
             printContributedVariables: true,
-            printPostContent: true
+            printPostContent:          true
         )
     }
 
@@ -48,7 +52,7 @@ pipeline {
                     // Prioridad: webhook added → webhook modified → manual
                     def configFile = (env.CONFIG_FILE?.trim()) 
                             ?: (env.CONFIG_FILE_ADDED?.trim())
-                            
+
                     echo "📌 CONFIG_FILE detectado: ${configFile}"
 
                     if (!configFile || configFile.split('/').size() < 3) {
