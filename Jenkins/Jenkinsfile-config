@@ -17,9 +17,9 @@ pipeline {
 
     parameters {
         string(
-            name: 'CONFIG_FILE',
-            defaultValue: 'mi-ecosistema/health-service.yml',
-            description: 'Ruta del yml dentro de performance-configs'
+            name:         'CONFIG_FILE',
+            defaultValue: 'mi-ecosistema/ME-001/health-service.yml',
+            description:  'Ruta del yml — Jenkins detecta la carpeta y ejecuta todos los ymls de ella'
         )
     }
 
@@ -29,7 +29,9 @@ pipeline {
 
     stages {
 
-        stage('Checkout pipeline repo') {
+        // ────────────────────────────────────────────────
+        stage('Checkout') {
+        // ────────────────────────────────────────────────
             steps {
                 echo '📥 Bajando código de performance-on-demand...'
                 git branch: 'main',
@@ -37,161 +39,270 @@ pipeline {
             }
         }
 
-        stage('Leer configuración') {
+        // ────────────────────────────────────────────────
+        stage('Detectar carpeta e issue') {
+        // ────────────────────────────────────────────────
             steps {
                 script {
-                    // Clonar performance-configs en subcarpeta
+                    // CONFIG_FILE = mi-ecosistema/ME-001/health-service.yml
+                    def parts     = params.CONFIG_FILE.split('/')
+                    env.PROYECTO  = parts[0]                       // mi-ecosistema
+                    env.ISSUE_KEY = parts[1]                       // ME-001
+                    env.CARPETA   = "${parts[0]}/${parts[1]}"      // mi-ecosistema/ME-001
+                    env.FECHA     = new Date().format('yyyy-MM-dd_HH-mm')
+
+                    // Clonar performance-configs
                     dir('performance-configs') {
                         git branch: 'main', url: env.CONFIGS_REPO
                     }
 
-                    def configPath = "performance-configs/${params.CONFIG_FILE}"
-                    def config = readYaml file: configPath
-
-                    env.SERVICE_NAME  = config.service.name
-                    env.SERVICE_URL   = config.service.url
-                    env.HTTP_METHOD   = config.service.method
-                    env.TIPO_SERVICIO = config.cuestionario.tipo_servicio
-                    env.COMPLEJIDAD   = config.cuestionario.complejidad
-                    env.OPERACION     = config.cuestionario.operacion
-                    env.BD            = config.cuestionario.bd
-
-                    echo "✅ Config cargada: ${env.SERVICE_NAME}"
-                    echo "   tipo=${env.TIPO_SERVICIO} | comp=${env.COMPLEJIDAD} | op=${env.OPERACION} | bd=${env.BD}"
-                }
-            }
-        }
-
-        stage('Derivar parámetros') {
-            steps {
-                script {
-                    def p = derivarParametros(
-                        env.TIPO_SERVICIO,
-                        env.COMPLEJIDAD,
-                        env.OPERACION,
-                        env.BD
-                    )
-
-                    env.TPS           = "${p.tps}"
-                    env.DURATION      = p.duration
-                    env.RAMP_UP       = "${p.rampUp}"
-                    env.P95_THRESHOLD = "${p.p95}"
-                    env.ERROR_RATE    = "${p.errorRate}"
-                    env.PRE_ALLOC_VUS = "${p.preAllocVUs}"
-                    env.DATOS_MINIMOS = "${p.datosMin}"
-                    env.MIX_RW        = p.mix
-
-                    def fecha      = new Date().format('yyyy-MM-dd_HH-mm')
-                    env.REPORT_NAME = "CONFIGDRIVEN_${env.SERVICE_NAME}_${fecha}.html"
-                    env.REPORT_PATH = "k6/reports/${env.REPORT_NAME}"
-
-                    currentBuild.description = "⚙️ CONFIG | ${env.SERVICE_NAME} | ${env.TPS} TPS | ${env.DURATION}"
-
-                    echo "✅ Parámetros derivados:"
-                    echo "   TPS=${env.TPS} | DURATION=${env.DURATION} | RAMP_UP=${env.RAMP_UP}s"
-                    echo "   P95=${env.P95_THRESHOLD}ms | preAllocVUs=${env.PRE_ALLOC_VUS}"
-                    echo "   Datos mínimos=${env.DATOS_MINIMOS} | Mix=${env.MIX_RW}"
-                }
-            }
-        }
-
-        stage('Health Check') {
-            steps {
-                script {
-                    echo "🧪 Verificando que el servicio responde..."
-                    def response = sh(
-                        script: "curl -s -o /dev/null -w '%{http_code}' ${env.SERVICE_URL}",
+                    // Escanear todos los yml de la carpeta del issue
+                    def ymlRaw = sh(
+                        script: "ls performance-configs/${env.CARPETA}/*.yml 2>/dev/null || echo ''",
                         returnStdout: true
                     ).trim()
-                    echo "Código de respuesta: ${response}"
-                    if (response == "000") {
-                        error("❌ El servicio no responde en ${env.SERVICE_URL}")
+
+                    if (!ymlRaw) {
+                        error "❌ No se encontraron ymls en: performance-configs/${env.CARPETA}"
+                    }
+
+                    env.YML_LIST = ymlRaw.split('\n').join(',')
+                    def count    = ymlRaw.split('\n').size()
+
+                    currentBuild.description = "⚙️ ${env.ISSUE_KEY} | ${count} servicio(s)"
+
+                    echo "✅ Proyecto:  ${env.PROYECTO}"
+                    echo "✅ Issue:     ${env.ISSUE_KEY}"
+                    echo "✅ Servicios: ${count}"
+                    ymlRaw.split('\n').each { echo "   → ${it}" }
+
+                    // Notificar en Jira que inician las pruebas
+                    withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
+                        jiraUtils.comment(
+                            env.ISSUE_KEY,
+                            "🚀 Jenkins inició pruebas config-driven. Build #${env.BUILD_NUMBER} | ${count} servicio(s) detectados en ${env.CARPETA}",
+                            JIRA_TOKEN
+                        )
                     }
                 }
             }
         }
 
-        stage('Ejecutar Prueba') {
-            agent {
-                docker {
-                    image 'ghcr.io/ghostnoc99/k6-performance:latest'
-                    args  "--entrypoint='' --network host -v /var/jenkins_home/workspace/config-driven-performance/k6/reports:/k6/reports"
-                    reuseNode true
-                }
-            }
+        // ────────────────────────────────────────────────
+        stage('Ejecutar pruebas en paralelo') {
+        // ────────────────────────────────────────────────
             steps {
                 script {
-                    catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                        sh """
-                            k6 run \\
-                              -e URL=${env.SERVICE_URL} \\
-                              -e METHOD=${env.HTTP_METHOD} \\
-                              -e TPS=${env.TPS} \\
-                              -e DURATION=${env.DURATION} \\
-                              -e RAMP_UP=${env.RAMP_UP} \\
-                              -e P95_THRESHOLD=${env.P95_THRESHOLD} \\
-                              -e ERROR_RATE=${env.ERROR_RATE} \\
-                              -e PRE_ALLOC_VUS=${env.PRE_ALLOC_VUS} \\
-                              -e SERVICE_NAME=${env.SERVICE_NAME} \\
-                              -e REPORT_NAME=${env.REPORT_NAME} \\
-                              k6/test-config-driven.js
-                        """
+                    def ymls      = env.YML_LIST.split(',')
+                    def paralelos = [:]
+
+                    ymls.each { ymlPath ->
+                        def ymlFile    = ymlPath.trim()
+                        def nombre     = ymlFile.split('/')[-1].replace('.yml', '')
+                        def reportName = "CONFIGDRIVEN_${env.ISSUE_KEY}_${nombre}_${env.FECHA}.html"
+
+                        paralelos[nombre] = {
+                            echo "🚀 Iniciando prueba: ${nombre}"
+
+                            def config = readYaml file: ymlFile
+                            def p = derivarParametros(
+                                config.cuestionario.tipo_servicio,
+                                config.cuestionario.complejidad,
+                                config.cuestionario.operacion,
+                                config.cuestionario.bd
+                            )
+
+                            echo "   TPS=${p.tps} | DURATION=${p.duration} | P95=${p.p95}ms"
+
+                            docker.image('ghcr.io/ghostnoc99/k6-performance:latest')
+                                  .inside("--entrypoint='' --network host -v /var/jenkins_home/workspace/config-driven-performance/k6/reports:/k6/reports") {
+                                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                                    sh """
+                                        k6 run \\
+                                          -e URL=${config.service.url} \\
+                                          -e METHOD=${config.service.method} \\
+                                          -e TPS=${p.tps} \\
+                                          -e DURATION=${p.duration} \\
+                                          -e RAMP_UP=${p.rampUp} \\
+                                          -e P95_THRESHOLD=${p.p95} \\
+                                          -e ERROR_RATE=${p.errorRate} \\
+                                          -e PRE_ALLOC_VUS=${p.preAllocVUs} \\
+                                          -e SERVICE_NAME=${config.service.name} \\
+                                          -e REPORT_NAME=${reportName} \\
+                                          k6/test-config-driven.js
+                                    """
+                                }
+                            }
+                        }
                     }
+
+                    parallel paralelos
                 }
             }
         }
 
+        // ────────────────────────────────────────────────
         stage('Quality Gate') {
+        // ────────────────────────────────────────────────
             steps {
                 script {
-                    def jsonPath = env.REPORT_PATH.replace('.html', '.json')
-                    k6Utils.qualityGate('load', jsonPath)
+                    def ymls    = env.YML_LIST.split(',')
+                    def resumen = []
+
+                    ymls.each { ymlPath ->
+                        def nombre     = ymlPath.trim().split('/')[-1].replace('.yml', '')
+                        def reportName = "CONFIGDRIVEN_${env.ISSUE_KEY}_${nombre}_${env.FECHA}.html"
+                        def jsonPath   = "k6/reports/${reportName}".replace('.html', '.json')
+
+                        echo "🔍 Evaluando Quality Gate: ${nombre}"
+
+                        if (fileExists(jsonPath)) {
+                            k6Utils.qualityGate('load', jsonPath)
+                            def metrics = k6Utils.parseMetrics(jsonPath)
+                            def estado  = currentBuild.result == 'FAILURE' ? '❌ FAIL' : '✅ PASS'
+
+                            resumen << [
+                                nombre:    nombre,
+                                p95:       metrics.p95,
+                                errorRate: metrics.errorRate,
+                                estado:    estado,
+                                reporte:   reportName
+                            ]
+                        } else {
+                            echo "⚠️ JSON no encontrado para ${nombre} — omitiendo"
+                            resumen << [
+                                nombre:    nombre,
+                                p95:       'N/A',
+                                errorRate: 'N/A',
+                                estado:    '⚠️ SIN DATOS',
+                                reporte:   reportName
+                            ]
+                        }
+                    }
+
+                    env.RESUMEN_JSON = groovy.json.JsonOutput.toJson(resumen)
+                    echo "📊 Resumen final: ${env.RESUMEN_JSON}"
                 }
             }
         }
     }
+
     post {
         always {
             script {
-                if (env.REPORT_PATH) {
-                    def status   = currentBuild.result ?: 'SUCCESS'
-                    def jsonPath = env.REPORT_PATH.replace('.html', '.json')
-                    def metrics  = k6Utils.parseMetrics(jsonPath)
+                def status  = currentBuild.result ?: 'SUCCESS'
+                def emoji   = status == 'SUCCESS' ? '✅' : '❌'
+                def resumen = []
+
+                try {
+                    resumen = new groovy.json.JsonSlurper()
+                                  .parseText(env.RESUMEN_JSON ?: '[]')
+                } catch(e) {
+                    echo "⚠️ No se pudo parsear el resumen"
+                }
+
+                // ── 1. Artifacts en Jenkins ──────────────────
+                archiveArtifacts artifacts:       'k6/reports/*.html',
+                                 allowEmptyArchive: true
+
+                // ── 2. Comentario final en Jira ──────────────
+                if (env.ISSUE_KEY && resumen) {
+                    def filas = resumen.collect { r ->
+                        "| ${r.nombre} | ${r.p95}ms | ${r.errorRate} | ${r.estado} |"
+                    }.join('\n')
 
                     withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
-                        confluenceUtils.publish([
-                            token:       JIRA_TOKEN,
-                            issueKey:    "CONFIG-${env.SERVICE_NAME}",
-                            testType:    'load',
-                            buildNumber: env.BUILD_NUMBER,
-                            status:      status,
-                            reportName:  env.REPORT_NAME,
-                            metrics:     metrics
-                        ])
+                        jiraUtils.comment(
+                            env.ISSUE_KEY,
+                            """📊 *Resultados finales — Build #${env.BUILD_NUMBER}* | Estado: *${status}*
+
+|| Servicio || P95 || Error Rate || Estado ||
+${filas}
+
+Reportes disponibles en Jenkins: ${env.BUILD_URL}artifact""",
+                            JIRA_TOKEN
+                        )
+
+                        // ── 3. Confluence por cada servicio ──────
+                        resumen.each { r ->
+                            def jsonPath = "k6/reports/${r.reporte}".replace('.html', '.json')
+                            if (fileExists(jsonPath)) {
+                                def metrics = k6Utils.parseMetrics(jsonPath)
+                                confluenceUtils.publish([
+                                    token:       JIRA_TOKEN,
+                                    issueKey:    env.ISSUE_KEY,
+                                    testType:    'load',
+                                    buildNumber: env.BUILD_NUMBER,
+                                    status:      status,
+                                    reportName:  r.reporte,
+                                    metrics:     metrics
+                                ])
+                            }
+                        }
                     }
-                } else {
-                    echo "⚠️ Pipeline falló antes de derivar parámetros — sin reporte"
+                }
+
+                // ── 4. Correo con resumen de todos los servicios
+                if (resumen) {
+                    def filasHtml = resumen.collect { r -> """
+                        <tr>
+                            <td><b>${r.nombre}</b></td>
+                            <td>${r.p95}ms</td>
+                            <td>${r.errorRate}</td>
+                            <td>${r.estado}</td>
+                        </tr>
+                    """ }.join('')
+
+                    emailext(
+                        to:      'newprojectcv.1999@gmail.com',
+                        subject: "${emoji} Config-Driven | ${env.ISSUE_KEY} | ${env.PROYECTO} | ${status}",
+                        body:    """
+                            <h2>${emoji} Performance Config-Driven — ${env.ISSUE_KEY}</h2>
+                            <p>
+                                <b>Proyecto:</b> ${env.PROYECTO} &nbsp;|&nbsp;
+                                <b>Build:</b> #${env.BUILD_NUMBER} &nbsp;|&nbsp;
+                                <b>Estado global:</b> ${status}
+                            </p>
+                            <table border='1' cellpadding='6' cellspacing='0'>
+                                <tr style='background:#2c3e50;color:white'>
+                                    <th>Servicio</th>
+                                    <th>P95</th>
+                                    <th>Error Rate</th>
+                                    <th>Estado</th>
+                                </tr>
+                                ${filasHtml}
+                            </table>
+                            <br>
+                            <p>
+                                📎 <a href="${env.BUILD_URL}artifact">Reportes HTML en Jenkins</a> &nbsp;|&nbsp;
+                                📄 <a href="https://mi-ecosistema.atlassian.net/wiki/spaces/PERF">Confluence</a> &nbsp;|&nbsp;
+                                🎯 <a href="https://mi-ecosistema.atlassian.net/browse/${env.ISSUE_KEY}">Jira ${env.ISSUE_KEY}</a>
+                            </p>
+                        """,
+                        attachmentsPattern: 'k6/reports/*.html',
+                        mimeType:           'text/html'
+                    )
                 }
             }
         }
-        success { echo "✅ Config-driven pipeline completado — ${env.SERVICE_NAME}" }
-        failure { echo "❌ Pipeline fallido — revisar consola" }
+        success { echo "✅ Todas las pruebas completadas — ${env.ISSUE_KEY}" }
+        failure { echo "❌ Revisar artifacts y comentarios en Jira ${env.ISSUE_KEY}" }
     }
 }
 
-// ================================================================
+// ════════════════════════════════════════════════
 // TABLA DE DERIVACIÓN — Estándar v2.0
-// ================================================================
+// ════════════════════════════════════════════════
 def derivarParametros(String tipo, String comp, String op, String bd) {
 
     if (tipo == 'MICROSERVICIO' && comp == 'BAJA' && op == 'LECTURA' && bd == 'SQL_ONPREMISE')
-        return [tps:8,  duration:'10m', rampUp:60, p95:2000, errorRate:0.01, preAllocVUs:24, datosMin:500,  mix:'100R']
+        return [tps:8,  duration:'2m', rampUp:60, p95:2000, errorRate:0.01, preAllocVUs:24, datosMin:500,  mix:'100R']
 
     if (tipo == 'MICROSERVICIO' && comp == 'BAJA' && op == 'LECTURA' && bd == 'NOSQL_NUBE')
         return [tps:10, duration:'10m', rampUp:60, p95:1500, errorRate:0.01, preAllocVUs:30, datosMin:500,  mix:'100R']
 
     if (tipo == 'MICROSERVICIO' && comp == 'MEDIA' && op == 'MIXTA' && bd == 'SQL_ONPREMISE')
-        return [tps:15, duration:'15m', rampUp:60, p95:2000, errorRate:0.01, preAllocVUs:45, datosMin:2000, mix:'70R30W']
+        return [tps:15, duration:'3m', rampUp:60, p95:2000, errorRate:0.01, preAllocVUs:45, datosMin:2000, mix:'70R30W']
 
     if (tipo == 'MICROSERVICIO' && comp == 'MEDIA' && op == 'MIXTA' && bd == 'NOSQL_NUBE')
         return [tps:20, duration:'15m', rampUp:60, p95:1500, errorRate:0.01, preAllocVUs:60, datosMin:2000, mix:'70R30W']
