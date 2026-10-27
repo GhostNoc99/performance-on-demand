@@ -226,13 +226,13 @@ pipeline {
                 }
 
                 // ── 1. Artifacts en Jenkins ──────────────────
-                archiveArtifacts artifacts:       'k6/reports/*.html',
+                archiveArtifacts artifacts: "k6/reports/CONFIGDRIVEN_${env.ISSUE_KEY}_*_${env.FECHA}.html",
                                  allowEmptyArchive: true
 
                 // ── 2. Comentario final en Jira ──────────────
                 if (env.ISSUE_KEY && resumen) {
                     def filas = resumen.collect { r ->
-                        "| ${r.nombre} | ${r.p95}ms | ${r.errorRate} | ${r.estado} |"
+                        "| ${r.nombre} | ${r.p95} | ${r.errorRate} | ${r.estado} |"
                     }.join('\n')
 
                     withCredentials([string(credentialsId: 'jira-api-token', variable: 'JIRA_TOKEN')]) {
@@ -272,7 +272,7 @@ Reportes disponibles en Jenkins: ${env.BUILD_URL}artifact""",
                     def filasHtml = resumen.collect { r -> """
                         <tr>
                             <td><b>${r.nombre}</b></td>
-                            <td>${r.p95}ms</td>
+                            <td>${r.p95}</td>
                             <td>${r.errorRate}</td>
                             <td>${r.estado}</td>
                         </tr>
@@ -304,7 +304,7 @@ Reportes disponibles en Jenkins: ${env.BUILD_URL}artifact""",
                                 🎯 <a href="https://mi-ecosistema.atlassian.net/browse/${env.ISSUE_KEY}">Jira ${env.ISSUE_KEY}</a>
                             </p>
                         """,
-                        attachmentsPattern: 'k6/reports/*.html',
+                        attachmentsPattern: "k6/reports/CONFIGDRIVEN_${env.ISSUE_KEY}_*_${env.FECHA}.html",
                         mimeType:           'text/html'
                     )
                 }
