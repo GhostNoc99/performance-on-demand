@@ -259,6 +259,7 @@ Reportes disponibles en Jenkins: ${env.BUILD_URL}artifact""",
                                     buildNumber: env.BUILD_NUMBER,
                                     status:      status,
                                     reportName:  r.reporte,
+                                    serviceName: r.nombre,
                                     metrics:     metrics
                                 ])
                             }
