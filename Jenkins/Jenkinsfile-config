@@ -1,4 +1,4 @@
-@Library('performance-lib') _
+@Library('performance-lib@fix-libs') _
 
 pipeline {
     agent any
