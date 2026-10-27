@@ -50,17 +50,16 @@ pipeline {
                 script {
 
                     // Prioridad: webhook added → webhook modified → manual
-                    def configFile = (env.CONFIG_FILE?.trim()) 
-                            ?: (env.CONFIG_FILE_ADDED?.trim())
+                    env.SELECTED_CONFIG = ((env.CONFIG_FILE?.trim()) ?: (env.CONFIG_FILE_ADDED?.trim())) ?: ''
 
-                    echo "📌 CONFIG_FILE detectado: ${configFile}"
+                    echo "📌 CONFIG_FILE detectado: ${env.SELECTED_CONFIG}"
 
-                    if (!configFile || configFile.split('/').size() < 3) {
-                        error "❌ No se detectó yml válido con estructura proyecto/issue/servicio.yml — valor: '${configFile}'"
+                    if (!env.SELECTED_CONFIG || env.SELECTED_CONFIG.split('/').size() < 3) {
+                        error "❌ No se detectó yml válido con estructura proyecto/issue/servicio.yml — valor: '${env.SELECTED_CONFIG}'"
                     }
 
                     // CONFIG_FILE = mi-ecosistema/ME-001/health-service.yml
-                    def parts     = configFile.split('/')
+                    def parts     = env.SELECTED_CONFIG.split('/')
                     env.PROYECTO  = parts[0]                       // mi-ecosistema
                     env.ISSUE_KEY = parts[1]                       // ME-001
                     env.CARPETA   = "${parts[0]}/${parts[1]}"      // mi-ecosistema/ME-001
